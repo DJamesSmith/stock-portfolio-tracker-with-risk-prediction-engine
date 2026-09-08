@@ -79,7 +79,7 @@ MAILERS = {
 }
 
 
-# CREATE DATABASE customer_churn_db OWNER django_user;
+# CREATE DATABASE stock_risk_prediction_db OWNER django_user;
 
 # NOTES: https://docs.google.com/document/d/100nUGdp2ZRZcKDNrX7mGhSPQGnLvMLWaZF9840ImHCo/edit?tab=t.0#heading=h.tn77ef5fg1dv
 
