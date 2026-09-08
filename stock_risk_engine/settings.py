@@ -1,7 +1,11 @@
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = 'django-insecure-&01*8(l80zb$ujbc1tqo79s*)pm(eqwqy^81^6_#uv5(taph-$'
+load_dotenv(BASE_DIR / ".env")
+
+SECRET_KEY = os.getenv("SECRET_KEY")
 DEBUG = True
 ALLOWED_HOSTS = []
 
@@ -42,11 +46,16 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'stock_risk_engine.wsgi.application'
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    "default": {
+        "ENGINE":   "django.db.backends.postgresql",
+        "NAME":     os.getenv("DB_NAME"),
+        "USER":     os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST":     os.getenv("DB_HOST"),
+        "PORT":     os.getenv("DB_PORT"),
     }
 }
+
 
 AUTH_PASSWORD_VALIDATORS = [
     { 'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator' },
@@ -68,3 +77,11 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+
+# CREATE DATABASE customer_churn_db OWNER django_user;
+
+# NOTES: https://docs.google.com/document/d/100nUGdp2ZRZcKDNrX7mGhSPQGnLvMLWaZF9840ImHCo/edit?tab=t.0#heading=h.tn77ef5fg1dv
+
+# Dataset taken from:
+# https://www.kaggle.com/datasets/innacampo/s-and-p-500-stocks-daily-historical-data-10-years
