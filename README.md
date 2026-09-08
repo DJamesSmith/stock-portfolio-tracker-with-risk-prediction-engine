@@ -8,7 +8,6 @@
 **Version:** 1.0\
 **Documentation:** September 2026
 
-------------------------------------------------------------------------
 
 ## Table of Contents
 
@@ -45,7 +44,6 @@
 -   [Development Roadmap](#development-roadmap)
 -   [License](#license)
 
-------------------------------------------------------------------------
 
 ## Overview
 
@@ -86,7 +84,6 @@ The platform combines:
 -   Periodic model retraining
 -   Redis-backed API response caching
 
-------------------------------------------------------------------------
 
 ## Project Objectives
 
@@ -178,7 +175,6 @@ makes it suitable for:
 -   Other mobile applications
 -   Future third-party clients
 
-------------------------------------------------------------------------
 
 ## Core Capabilities
 
@@ -260,7 +256,6 @@ portfolio-level information including:
 -   High-risk holding count.
 -   Average prediction confidence.
 
-------------------------------------------------------------------------
 
 # Technology Stack
 
@@ -299,7 +294,6 @@ portfolio-level information including:
                           API                     
   -----------------------------------------------------------------------
 
-------------------------------------------------------------------------
 
 # System Architecture
 
@@ -337,7 +331,6 @@ The platform is organized into five logical layers.
 └─────────────────────────────────────────────┘
 ```
 
-------------------------------------------------------------------------
 
 ## Synchronous Request Flow
 
@@ -384,7 +377,6 @@ Redis Cache
       Response
 ```
 
-------------------------------------------------------------------------
 
 ## Asynchronous Flow
 
@@ -414,7 +406,6 @@ Scheduled operations include:
 -   Nightly directional forecasting.
 -   Weekly/monthly model retraining.
 
-------------------------------------------------------------------------
 
 # Django Application Structure
 
@@ -439,7 +430,6 @@ Responsibilities:
 
 No other application defines a user-like model.
 
-------------------------------------------------------------------------
 
 ## `portfolios`
 
@@ -460,7 +450,6 @@ Responsibilities:
 
 The ML output fields on `Holding` are read-only to clients.
 
-------------------------------------------------------------------------
 
 ## `market_data`
 
@@ -478,7 +467,6 @@ Responsibilities:
 -   Celery-based market-data ingestion.
 -   Individual ticker refresh.
 
-------------------------------------------------------------------------
 
 ## `analytics`
 
@@ -500,7 +488,6 @@ The analytics application intentionally does not own a database table of
 its own. It computes and annotates data owned by the `portfolios`
 application.
 
-------------------------------------------------------------------------
 
 ## `core`
 
@@ -514,7 +501,6 @@ Responsibilities:
 -   Redis-backed throttling.
 -   Shared backend utilities.
 
-------------------------------------------------------------------------
 
 # Database Design
 
@@ -527,7 +513,6 @@ The system uses four core database entities.
   `Holding`        portfolios    Individual stock positions
   `PriceHistory`   market_data   Historical OHLCV data
 
-------------------------------------------------------------------------
 
 ## User
 
@@ -558,7 +543,6 @@ Investor User
 This allows the system to retrieve all investors assigned to a
 particular analyst without introducing a separate assignment table.
 
-------------------------------------------------------------------------
 
 ## Portfolio
 
@@ -577,7 +561,6 @@ Relationship:
 User 1 ──────── N Portfolio
 ```
 
-------------------------------------------------------------------------
 
 ## Holding
 
@@ -604,7 +587,6 @@ Portfolio 1 ──────── N Holding
 The ML fields are read-only through the API. They are populated by the
 analytics background tasks.
 
-------------------------------------------------------------------------
 
 ## PriceHistory
 
@@ -638,7 +620,6 @@ shared across every investor holding the same stock.
 For example, if 1,000 users hold AAPL, the application should not store
 1,000 copies of the same historical AAPL data.
 
-------------------------------------------------------------------------
 
 # Authentication and Authorization
 
@@ -660,7 +641,6 @@ role = investor
 
 Only administrators can subsequently modify roles.
 
-------------------------------------------------------------------------
 
 ## Login
 
@@ -673,7 +653,6 @@ Successful authentication produces:
 -   Access token.
 -   Refresh token.
 
-------------------------------------------------------------------------
 
 ## Access Token
 
@@ -689,7 +668,6 @@ They are sent using the standard Bearer authentication scheme:
 Authorization: Bearer <access_token>
 ```
 
-------------------------------------------------------------------------
 
 ## Refresh Token
 
@@ -706,7 +684,6 @@ for a new access token.
 POST /api/accounts/token/refresh/
 ```
 
-------------------------------------------------------------------------
 
 ## Separate JWT Secrets
 
@@ -721,7 +698,6 @@ This provides defense in depth by preventing compromise of one
 token-signing secret from automatically compromising the other token
 type.
 
-------------------------------------------------------------------------
 
 ## Logout
 
@@ -732,7 +708,6 @@ POST /api/accounts/logout/
 The current refresh token is invalidated/blacklisted so that it cannot
 be used to obtain new access tokens.
 
-------------------------------------------------------------------------
 
 # Authorization Model
 
@@ -777,7 +752,6 @@ their role.
 
 This reduces the risk of insecure direct object reference (IDOR).
 
-------------------------------------------------------------------------
 
 # Custom Permission Classes
 
@@ -815,7 +789,6 @@ Allows read access when the requester is:
 -   The assigned analyst.
 -   An administrator.
 
-------------------------------------------------------------------------
 
 # Roles and Permissions
 
@@ -835,7 +808,6 @@ Allows read access when the requester is:
   Manage roles                       No        No     Yes
   System-wide analytics              No        No     Yes
 
-------------------------------------------------------------------------
 
 # REST API
 
@@ -848,7 +820,6 @@ All API endpoints are versioned under:
 Except for registration/login/refresh operations, protected endpoints
 require a valid JWT access token.
 
-------------------------------------------------------------------------
 
 ## Accounts
 
@@ -879,7 +850,6 @@ require a valid JWT access token.
                                                      assignment        
   --------------------------------------------------------------------------------------
 
-------------------------------------------------------------------------
 
 ## Portfolios
 
@@ -908,7 +878,6 @@ require a valid JWT access token.
   POST              `/api/portfolios/{id}/holdings/`   Add holding       Owner / Admin
   ----------------------------------------------------------------------------------------
 
-------------------------------------------------------------------------
 
 ## Holdings
 
@@ -923,7 +892,6 @@ require a valid JWT access token.
   DELETE            `/api/holdings/{id}/`   Remove position   Owner / Admin
   -----------------------------------------------------------------------------
 
-------------------------------------------------------------------------
 
 ## Market Data
 
@@ -939,7 +907,6 @@ require a valid JWT access token.
                                                              refresh           
   ----------------------------------------------------------------------------------------------
 
-------------------------------------------------------------------------
 
 ## Analytics
 
@@ -959,7 +926,6 @@ require a valid JWT access token.
                                                                     breakdown         Admin
   -----------------------------------------------------------------------------------------------------
 
-------------------------------------------------------------------------
 
 # Serializers
 
@@ -984,7 +950,6 @@ The password is:
 -   Hashed before storage.
 -   Never returned in API responses.
 
-------------------------------------------------------------------------
 
 ## `RegisterSerializer`
 
@@ -1002,7 +967,6 @@ Registration always defaults to:
 role = investor
 ```
 
-------------------------------------------------------------------------
 
 ## `LoginSerializer`
 
@@ -1012,7 +976,6 @@ Responsible for:
 -   Username/email authentication.
 -   Token issuing.
 
-------------------------------------------------------------------------
 
 ## `PortfolioSerializer`
 
@@ -1027,7 +990,6 @@ List responses include:
 
 Detail responses additionally include nested holding information.
 
-------------------------------------------------------------------------
 
 ## `HoldingSerializer`
 
@@ -1058,7 +1020,6 @@ prediction_confidence
 
 This prevents users from spoofing analytics results.
 
-------------------------------------------------------------------------
 
 ## `PriceHistorySerializer`
 
@@ -1072,7 +1033,6 @@ Read-only representation of:
 -   Close.
 -   Volume.
 
-------------------------------------------------------------------------
 
 ## `RiskSummarySerializer`
 
@@ -1100,7 +1060,6 @@ Example conceptual response:
 }
 ```
 
-------------------------------------------------------------------------
 
 # Celery and Redis
 
@@ -1127,7 +1086,6 @@ Stores Celery task state/results separately from the broker.
 The application uses Redis for caching expensive, read-heavy API
 responses.
 
-------------------------------------------------------------------------
 
 # Scheduled and On-Demand Tasks
 
@@ -1141,7 +1099,6 @@ Responsibilities:
 -   Process tracked tickers.
 -   Bulk-insert new `PriceHistory` rows.
 
-------------------------------------------------------------------------
 
 ## `refresh_single_ticker`
 
@@ -1160,7 +1117,6 @@ Available to:
 
 The operation runs asynchronously instead of blocking the HTTP request.
 
-------------------------------------------------------------------------
 
 ## `recompute_holding_risk`
 
@@ -1174,7 +1130,6 @@ Responsibilities:
     -   `risk_label`
     -   `risk_score`
 
-------------------------------------------------------------------------
 
 ## `recompute_holding_forecast`
 
@@ -1188,7 +1143,6 @@ Responsibilities:
     -   `predicted_direction`
     -   `prediction_confidence`
 
-------------------------------------------------------------------------
 
 ## `recompute_single_holding`
 
@@ -1205,7 +1159,6 @@ Available to:
 -   Analyst
 -   Admin
 
-------------------------------------------------------------------------
 
 ## `retrain_models`
 
@@ -1220,7 +1173,6 @@ Responsibilities:
 -   Preserve traceability between predictions and the model version that
     generated them.
 
-------------------------------------------------------------------------
 
 # Caching Strategy
 
@@ -1243,7 +1195,6 @@ Cache invalidation occurs when:
 The TTL is therefore a safety net rather than the primary consistency
 mechanism.
 
-------------------------------------------------------------------------
 
 # Rate Limiting
 
@@ -1253,7 +1204,6 @@ DRF throttle.
 This prevents a single user from repeatedly triggering external
 market-data requests.
 
-------------------------------------------------------------------------
 
 # Machine Learning Pipeline
 
@@ -1272,7 +1222,6 @@ Holding
 -   Quantity.
 -   Buy date.
 
-------------------------------------------------------------------------
 
 ## Feature Engineering
 
@@ -1321,7 +1270,6 @@ Current date - buy_date
 
 Computed relative to the original buy price.
 
-------------------------------------------------------------------------
 
 # Model 1 --- Risk Classification
 
@@ -1359,7 +1307,6 @@ risk_score
 The `risk_score` represents the model probability associated with the
 predicted class.
 
-------------------------------------------------------------------------
 
 ## Why Random Forest?
 
@@ -1376,7 +1323,6 @@ A Logistic Regression model is used as a baseline so that the additional
 complexity of Random Forest can be justified using measured evaluation
 results rather than assumption.
 
-------------------------------------------------------------------------
 
 # Model 2 --- Directional Forecast
 
@@ -1410,7 +1356,6 @@ predicted_direction
 prediction_confidence
 ```
 
-------------------------------------------------------------------------
 
 ## Why Direction Instead of Exact Price?
 
@@ -1429,7 +1374,6 @@ Instead, it predicts:
 This transforms the problem into a binary classification task that is
 easier to validate and discuss responsibly.
 
-------------------------------------------------------------------------
 
 # Training Methodology
 
@@ -1461,7 +1405,6 @@ training data.
 A chronological split better represents the temporal nature of financial
 forecasting.
 
-------------------------------------------------------------------------
 
 # Model Evaluation
 
@@ -1493,7 +1436,6 @@ Metrics:
 Model evaluation should be performed on a held-out chronological period
 rather than on training data.
 
-------------------------------------------------------------------------
 
 # Model Versioning
 
@@ -1516,7 +1458,6 @@ This makes model behaviour traceable and provides a foundation for:
 -   Future model rollback.
 -   Monitoring model performance over time.
 
-------------------------------------------------------------------------
 
 # Dataset
 
@@ -1552,7 +1493,6 @@ Close
 The ingestion process adds the ticker from the filename and maps the
 data into the application's `PriceHistory` representation.
 
-------------------------------------------------------------------------
 
 ## Dataset-to-Database Mapping
 
@@ -1597,7 +1537,6 @@ The historical dataset acts as a one-time backfill source, while the
 Celery ingestion system is intended to handle ongoing market-data
 updates.
 
-------------------------------------------------------------------------
 
 ## Why Ten Years of Data?
 
@@ -1621,7 +1560,6 @@ Ten years also provides a substantial chronological span for:
 -   Recent holdout testing.
 -   Cross-sectional learning across multiple S&P 500 tickers.
 
-------------------------------------------------------------------------
 
 # Environment Configuration
 
@@ -1662,7 +1600,6 @@ API credentials
 private tokens
 ```
 
-------------------------------------------------------------------------
 
 # Project Directory Structure
 
@@ -1739,7 +1676,6 @@ stock-portfolio-tracker-with-risk-prediction-engine/
 > contain only the Django project scaffold while the remaining
 > applications are implemented incrementally.
 
-------------------------------------------------------------------------
 
 # Installation and Local Development
 
@@ -1750,7 +1686,6 @@ git clone https://github.com/DJamesSmith/stock-portfolio-tracker-with-risk-predi
 cd stock-portfolio-tracker-with-risk-prediction-engine
 ```
 
-------------------------------------------------------------------------
 
 ## 2. Create a Virtual Environment
 
@@ -1768,7 +1703,6 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-------------------------------------------------------------------------
 
 ## 3. Upgrade pip
 
@@ -1776,7 +1710,6 @@ venv\Scripts\activate
 python -m pip install --upgrade pip
 ```
 
-------------------------------------------------------------------------
 
 ## 4. Install Dependencies
 
@@ -1792,7 +1725,6 @@ If the project uses separated requirement files:
 pip install -r requirements/development.txt
 ```
 
-------------------------------------------------------------------------
 
 ## 5. Configure Environment Variables
 
@@ -1804,7 +1736,6 @@ Create:
 
 and provide the required database, JWT, Redis, and application settings.
 
-------------------------------------------------------------------------
 
 # Database Setup
 
@@ -1835,7 +1766,6 @@ Create an administrator:
 python manage.py createsuperuser
 ```
 
-------------------------------------------------------------------------
 
 # Running Django
 
@@ -1854,7 +1784,6 @@ http://127.0.0.1:8000/
 The Django REST Framework browsable API can be used during development
 and testing.
 
-------------------------------------------------------------------------
 
 # Running Redis
 
@@ -1872,7 +1801,6 @@ Expected response:
 PONG
 ```
 
-------------------------------------------------------------------------
 
 # Running Celery
 
@@ -1894,7 +1822,6 @@ celery -A config beat --loglevel=info
 The worker handles asynchronous tasks while Celery Beat schedules
 recurring jobs.
 
-------------------------------------------------------------------------
 
 # Authentication Flow
 
@@ -1922,7 +1849,6 @@ The intended lifecycle is:
 10. Refresh token invalidated
 ```
 
-------------------------------------------------------------------------
 
 # End-to-End Workflow
 
@@ -2037,7 +1963,6 @@ IsAssignedAnalyst
 
 rather than special-casing individual views.
 
-------------------------------------------------------------------------
 
 # Security Considerations
 
@@ -2050,7 +1975,6 @@ Passwords are never stored as plaintext.
 Django's standard password hashing and validation mechanisms are reused
 with the custom user model.
 
-------------------------------------------------------------------------
 
 ## JWT Security
 
@@ -2068,7 +1992,6 @@ Refresh tokens have a longer lifetime:
 
 Separate signing secrets are used for the two token types.
 
-------------------------------------------------------------------------
 
 ## Object-Level Authorization
 
@@ -2077,14 +2000,12 @@ Authorization is applied at the queryset/resource level.
 This prevents users from accessing another user's resources by guessing
 IDs.
 
-------------------------------------------------------------------------
 
 ## Rate Limiting
 
 Registration, login, and manual market-data refresh operations are
 throttled.
 
-------------------------------------------------------------------------
 
 ## CORS
 
@@ -2098,7 +2019,6 @@ Allow-All
 
 policy in production.
 
-------------------------------------------------------------------------
 
 ## Secrets
 
@@ -2112,7 +2032,6 @@ Never commit:
 
 or credentials to the repository.
 
-------------------------------------------------------------------------
 
 # Performance and Non-Functional Considerations
 
@@ -2129,7 +2048,6 @@ Portfolio(user_id)
 These indexes support the join-heavy queries used by portfolio and
 analytics endpoints.
 
-------------------------------------------------------------------------
 
 ## Query Optimization
 
@@ -2152,14 +2070,12 @@ annotate()
 should be preferred over retrieving unnecessary rows into application
 memory.
 
-------------------------------------------------------------------------
 
 ## N+1 Query Prevention
 
 Nested portfolio/holding API responses should be designed with
 appropriate queryset optimization to avoid N+1 query behaviour.
 
-------------------------------------------------------------------------
 
 ## Pagination
 
@@ -2170,7 +2086,6 @@ List endpoints should be paginated to:
 -   Improve API performance.
 -   Reduce mobile data usage.
 
-------------------------------------------------------------------------
 
 ## Background Processing
 
@@ -2187,7 +2102,6 @@ Large aggregation tasks
 
 These are candidates for Celery execution.
 
-------------------------------------------------------------------------
 
 # Flutter Integration Readiness
 
@@ -2236,7 +2150,6 @@ client changes from Postman/web to Flutter.
 A Flutter implementation can use secure client-side token storage rather
 than insecure browser-style local storage.
 
-------------------------------------------------------------------------
 
 # Future Scope
 
@@ -2249,7 +2162,6 @@ Use Firebase Cloud Messaging to notify users when:
 -   A holding's risk level changes.
 -   A forecast crosses a confidence threshold.
 
-------------------------------------------------------------------------
 
 ## Real-Time Price Updates
 
@@ -2262,7 +2174,6 @@ WebSockets
 
 This could replace periodic polling for selected live-data use cases.
 
-------------------------------------------------------------------------
 
 ## Sector-Level Analytics
 
@@ -2273,7 +2184,6 @@ Potential features:
 -   Sector risk.
 -   Sector diversification.
 
-------------------------------------------------------------------------
 
 ## Portfolio Diversification Score
 
@@ -2284,14 +2194,12 @@ Introduce a portfolio-level diversification metric based on:
 -   Concentration.
 -   Risk distribution.
 
-------------------------------------------------------------------------
 
 ## Portfolio Rebalancing
 
 Use existing risk information to generate potential rebalancing
 suggestions.
 
-------------------------------------------------------------------------
 
 ## LSTM Forecasting
 
@@ -2303,7 +2211,6 @@ gradient-boosting approach rather than automatically replacing it.
 The purpose would be to determine whether additional model complexity
 provides a measurable improvement.
 
-------------------------------------------------------------------------
 
 ## Docker
 
@@ -2317,7 +2224,6 @@ Docker Compose
 may be introduced when the project moves toward a shared or
 production-style deployment environment.
 
-------------------------------------------------------------------------
 
 # Development Roadmap
 
@@ -2379,7 +2285,6 @@ Phase 18
 Production deployment
 ```
 
-------------------------------------------------------------------------
 
 # Current Implementation Status
 
@@ -2410,7 +2315,6 @@ This distinction is important: **architecture/documentation should
 describe the intended system, while implementation status should
 accurately reflect what currently exists in the repository.**
 
-------------------------------------------------------------------------
 
 # Machine Learning Disclaimer
 
@@ -2429,8 +2333,6 @@ They are **not financial advice** and should not be treated as
 guaranteed predictions of future market behaviour.
 
 Historical market performance does not guarantee future results.
-
-------------------------------------------------------------------------
 
 # License
 
