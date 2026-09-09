@@ -1,16 +1,12 @@
+# Logs how long a function takes to execute.
+# This decorator is intentionally generic so it can later be placed on Random Forest / Gradient Boosting training functions in ml_engine.
+
 from functools import wraps
 from time import perf_counter
 from .application_logger import ApplicationLogger
 
 
 def log_execution_time(view_func):
-    """
-    Logs how long a function takes to execute.
-
-    This decorator is intentionally generic so it can later be placed
-    on Random Forest / Gradient Boosting training functions in ml_engine.
-    """
-
     @wraps(view_func)
     def wrapper(*args, **kwargs):
         start_time = perf_counter()
