@@ -1,7 +1,5 @@
 from rest_framework.permissions import BasePermission
-
 from config.application_logger import ApplicationLogger
-
 from .models import User
 
 
