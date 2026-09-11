@@ -75,7 +75,7 @@ def blacklist_refresh_token(payload):
         return False
 
     remaining_seconds = max(int(exp - datetime.now(timezone.utc).timestamp()), 1)
-    cache.set(f"blacklisted_refresh: {jti}", True, timeout=remaining_seconds)
+    cache.set(f"blacklisted_refresh:{jti}", True, timeout=remaining_seconds)
     ApplicationLogger.info(f"Refresh token blacklisted: jti={jti}")
     return True
 
