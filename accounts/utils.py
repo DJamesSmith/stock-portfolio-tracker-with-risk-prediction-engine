@@ -64,7 +64,7 @@ def decode_refresh_token(token):
 
 
 def is_refresh_token_blacklisted(jti):
-    return cache.get(f"blacklisted_refresh:{jti}") is True
+    return cache.get(f"blacklisted_refresh:{jti}") is True                                  # blacklisted_refresh:abc123; The token would need to be the same to be detected as blacklisted
 
 
 def blacklist_refresh_token(payload):
@@ -75,7 +75,7 @@ def blacklist_refresh_token(payload):
         return False
 
     remaining_seconds = max(int(exp - datetime.now(timezone.utc).timestamp()), 1)
-    cache.set(f"blacklisted_refresh:{jti}", True, timeout=remaining_seconds)
+    cache.set(f"blacklisted_refresh:{jti}", True, timeout=remaining_seconds)                # blacklisted_refresh:abc123; The token would need to be the same to be detected as blacklisted
     ApplicationLogger.info(f"Refresh token blacklisted: jti={jti}")
     return True
 
