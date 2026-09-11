@@ -3,10 +3,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from config.application_logger import ApplicationLogger
-from .models import User
-from .permissions import IsAdmin
-from .serializers import AdminUserUpdateSerializer, LoginSerializer, RegisterSerializer, UserSerializer
-from .utils import blacklist_refresh_token, create_token_pair, decode_refresh_token, get_user_from_token_payload, is_refresh_token_blacklisted, create_access_token
+from ..models import User
+from ..permissions import IsAdmin
+from ..serializers import AdminUserUpdateSerializer, LoginSerializer, RegisterSerializer, UserSerializer
+from ..utils import blacklist_refresh_token, create_token_pair, decode_refresh_token, get_user_from_token_payload, is_refresh_token_blacklisted, create_access_token
 
 
 class RegisterView(APIView):
