@@ -1,162 +1,74 @@
 {% extends "base.html" %}
-
 {% block title %}User Management{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1>User Management</h1>
-        <p class="text-muted mb-0">
-            Administrators can change user roles and assign analysts.
-        </p>
-    </div>
-</div>
-
-<div class="card shadow-sm">
-    <div class="card-body p-0">
-
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-dark">
-                    <tr>
-                        <th>ID</th>
-                        <th>Username</th>
-                        <th>Email</th>
-                        <th>Current Role</th>
-                        <th>Change Role</th>
-                        <th>Assigned Analyst</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-
-                <tbody>
-                {% for user_item in users %}
-                    <tr>
-                        <td>{{ user_item.id }}</td>
-                        <td>{{ user_item.username }}</td>
-                        <td>{{ user_item.email }}</td>
-
-                        <td>
-                            <span class="badge text-bg-secondary">
-                                {{ user_item.get_role_display }}
-                            </span>
-                        </td>
-
-                        <td>
-                            <form
-                                method="POST"
-                                action="{% url 'accounts:user-role-update' user_item.id %}"
-                                class="role-update-form"
-                                data-original-role="{{ user_item.role }}"
-                                data-original-analyst="{{ user_item.assigned_analyst_id|default:'' }}"
-                            >
-                                {% csrf_token %}
-
-                                <select
-                                    name="role"
-                                    class="form-select role-select"
-                                    {% if user_item.id == request.user.id %}disabled{% endif %}
-                                >
-                                    {% for role in roles %}
-                                        <option
-                                            value="{{ role.value }}"
-                                            {% if user_item.role == role.value %}selected{% endif %}
-                                        >
-                                            {{ role.label }}
-                                        </option>
-                                    {% endfor %}
-                                </select>
-                        </td>
-
-                        <td>
-                                <select
-                                    name="assigned_analyst"
-                                    class="form-select analyst-select"
-                                    {% if user_item.role != "investor" or user_item.id == request.user.id %}disabled{% endif %}
-                                >
-                                    <option value="">No analyst</option>
-
-                                    {% for analyst in analysts %}
-                                        <option
-                                            value="{{ analyst.id }}"
-                                            {% if user_item.assigned_analyst_id == analyst.id %}selected{% endif %}
-                                        >
-                                            {{ analyst.username }}
-                                        </option>
-                                    {% endfor %}
-                                </select>
-                        </td>
-
-                        <td>
-                                <button
-                                    type="submit"
-                                    class="btn btn-primary btn-sm update-button"
-                                    disabled
-                                    {% if user_item.id == request.user.id %}disabled{% endif %}
-                                >
-                                    Update
-                                </button>
-
-                            </form>
-                        </td>
-                    </tr>
-                {% empty %}
-                    <tr>
-                        <td colspan="7" class="text-center py-4">
-                            No users found.
-                        </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-
-            </table>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1>User Management</h1>
+            <p class="text-muted mb-0"> Administrators can change user roles and assign analysts. </p>
         </div>
-
     </div>
-</div>
-{% endblock %}
 
-{% block scripts %}
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-    const forms = document.querySelectorAll(".role-update-form");
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Current Role</th>
+                            <th>Change Role</th>
+                            <th>Assigned Analyst</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
 
-    forms.forEach(function (form) {
-        const roleSelect = form.querySelector(".role-select");
-        const analystSelect = form.querySelector(".analyst-select");
-        const updateButton = form.querySelector(".update-button");
+                    <tbody>
+                    {% for user_item in users %}
+                        <tr>
+                            <td>{{ user_item.id }}</td>
+                            <td>{{ user_item.username }}</td>
+                            <td>{{ user_item.email }}</td>
+                            <td> <span class="badge text-bg-secondary"> {{ user_item.get_role_display }} </span> </td>
+                            <td>
+                                <form
+                                    method="POST"
+                                    action="{% url 'accounts:user-role-update' user_item.id %}"
+                                    class="role-update-form"
+                                    data-original-role="{{ user_item.role }}"
+                                    data-original-analyst="{{ user_item.assigned_analyst_id|default:'' }}">
+                                    {% csrf_token %}
+                                    <select name="role" class="form-select role-select" {% if user_item.id == request.user.id %}disabled{% endif %} >
+                                        {% for role in roles %}
+                                            <option value="{{ role.value }}" {% if user_item.role == role.value %}selected{% endif %} > {{ role.label }} </option>
+                                        {% endfor %}
+                                    </select>
+                            </td>
+                            <td>
+                                    <select
+                                        name="assigned_analyst"
+                                        class="form-select analyst-select"
+                                        {% if user_item.role != "investor" or user_item.id == request.user.id %}disabled{% endif %}>
+                                        <option value="">No analyst</option>
 
-        const originalRole = form.dataset.originalRole;
-        const originalAnalyst = form.dataset.originalAnalyst;
-
-        function checkForChanges() {
-            const currentRole = roleSelect.value;
-            const currentAnalyst = analystSelect.disabled
-                ? ""
-                : analystSelect.value;
-
-            const roleChanged = currentRole !== originalRole;
-            const analystChanged = currentAnalyst !== originalAnalyst;
-
-            updateButton.disabled = !(roleChanged || analystChanged);
-        }
-
-        function updateAnalystState() {
-            if (roleSelect.value === "investor") {
-                analystSelect.disabled = false;
-            } else {
-                analystSelect.disabled = true;
-                analystSelect.value = "";
-            }
-
-            checkForChanges();
-        }
-
-        roleSelect.addEventListener("change", updateAnalystState);
-        analystSelect.addEventListener("change", checkForChanges);
-
-        checkForChanges();
-    });
-});
-</script>
+                                        {% for analyst in analysts %}
+                                            <option value="{{ analyst.id }}" {% if user_item.assigned_analyst_id == analyst.id %}selected{% endif %} > {{ analyst.username }} </option>
+                                        {% endfor %}
+                                    </select>
+                            </td>
+                            <td>
+                                <button type="submit" class="btn btn-primary btn-sm update-button" disabled {% if user_item.id == request.user.id %}disabled{% endif %}> Update </button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr> <td colspan="7" class="text-center py-4"> No users found. </td> </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 {% endblock %}

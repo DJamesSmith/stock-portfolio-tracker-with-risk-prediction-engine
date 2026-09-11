@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block title %}Login{% endblock %}
 
 {% block content %}
@@ -8,7 +7,6 @@
 
         <div class="card shadow-sm">
             <div class="card-body p-4">
-
                 <h2 class="mb-4">Login</h2>
 
                 {% if errors %}
@@ -23,46 +21,21 @@
 
                 <form method="POST">
                     {% csrf_token %}
-
                     <div class="mb-3">
-                        <label class="form-label">
-                            Username or Email
-                        </label>
-                        <input
-                            type="text"
-                            name="username_or_email"
-                            class="form-control"
-                            required
-                        >
+                        <label class="form-label"> Username or Email </label>
+                        <input type="text" name="username_or_email" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"> Password </label>
+                        <input type="password" name="password" class="form-control" required>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">
-                            Password
-                        </label>
-                        <input
-                            type="password"
-                            name="password"
-                            class="form-control"
-                            required
-                        >
-                    </div>
-
-                    <button class="btn btn-dark w-100">
-                        Login
-                    </button>
+                    <button class="btn btn-dark w-100"> Login </button>
                 </form>
 
-                <p class="text-center mt-3 mb-0">
-                    No account?
-                    <a href="{% url 'accounts:register' %}">
-                        Register
-                    </a>
-                </p>
-
+                <p class="text-center mt-3 mb-0"> No account? <a href="{% url 'accounts:register' %}"> Register </a> </p>
             </div>
         </div>
-
     </div>
 </div>
 {% endblock %}

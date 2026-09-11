@@ -1,32 +1,15 @@
 {% extends "base.html" %}
-
 {% block title %}Stock Risk Engine{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-9 text-center">
-
-        <h1 class="display-5 fw-bold">
-            Stock Portfolio Risk & Forecasting Platform
-        </h1>
-
-        <p class="lead text-muted mt-3">
-            Portfolio management, market data, risk classification and
-            directional forecasting.
-        </p>
-
+        <h1 class="display-5 fw-bold"> Stock Portfolio Risk & Forecasting Platform </h1>
+        <p class="lead text-muted mt-3"> Portfolio management, market data, risk classification and directional forecasting. </p>
         <div class="mt-4">
-            <a href="{% url 'accounts:login' %}"
-               class="btn btn-dark btn-lg me-2">
-                Login
-            </a>
-
-            <a href="{% url 'accounts:register' %}"
-               class="btn btn-primary btn-lg">
-                Create Investor Account
-            </a>
+            <a href="{% url 'accounts:login' %}" class="btn btn-dark btn-lg me-2"> Login </a>
+            <a href="{% url 'accounts:register' %}" class="btn btn-primary btn-lg"> Create Investor Account </a>
         </div>
-
     </div>
 </div>
 {% endblock %}
