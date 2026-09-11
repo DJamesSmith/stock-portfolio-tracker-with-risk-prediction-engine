@@ -6,7 +6,7 @@ from config.application_logger import ApplicationLogger
 from .models import User
 from .permissions import IsAdmin
 from .serializers import AdminUserUpdateSerializer, LoginSerializer, RegisterSerializer, UserSerializer
-from .utils import blacklist_refresh_token, create_token_pair, decode_refresh_token, get_user_from_token_payload, is_refresh_token_blacklisted
+from .utils import blacklist_refresh_token, create_token_pair, decode_refresh_token, get_user_from_token_payload, is_refresh_token_blacklisted, create_access_token
 
 
 class RegisterView(APIView):
@@ -72,7 +72,7 @@ class RefreshTokenView(APIView):
         if user is None:
             return Response({ "detail": "User no longer exists." }, status=status.HTTP_401_UNAUTHORIZED)
 
-        access_token = create_token_pair(user)["access"]
+        access_token = create_access_token(user)["access"]
         ApplicationLogger.info(f"Access token refreshed: username={user.username}")
 
         return Response({ "access": access_token }, status=status.HTTP_200_OK)
