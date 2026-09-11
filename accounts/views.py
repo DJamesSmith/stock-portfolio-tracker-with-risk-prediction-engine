@@ -95,6 +95,9 @@ class LogoutView(APIView):
         if payload.get("token_type") != "refresh":
             return Response({ "detail": "Refresh token required." }, status=status.HTTP_401_UNAUTHORIZED)
 
+        if payload.get("user_id") != request.user.id:
+            return Response({ "detail": "Refresh token does not belong to this user." }, status=status.HTTP_403_FORBIDDEN)
+
         blacklist_refresh_token(payload)
 
         ApplicationLogger.info(f"Logout completed: username={request.user.username}")

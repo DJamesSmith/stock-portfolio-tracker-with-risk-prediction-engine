@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Register{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7 col-lg-6">
+
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+
+                <h2 class="mb-4">Create Investor Account</h2>
+
+                {% if errors %}
+                    <div class="alert alert-danger">
+                        {% for field, field_errors in errors.items %}
+                            {% for error in field_errors %}
+                                <div>{{ field|title }}: {{ error }}</div>
+                            {% endfor %}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+
+                <form method="POST">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input
+                            type="text"
+                            name="username"
+                            class="form-control"
+                            value="{{ form_data.username|default:'' }}"
+                            required
+                        >
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input
+                            type="email"
+                            name="email"
+                            class="form-control"
+                            value="{{ form_data.email|default:'' }}"
+                            required
+                        >
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input
+                            type="password"
+                            name="password"
+                            class="form-control"
+                            required
+                        >
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">
+                            Confirm Password
+                        </label>
+                        <input
+                            type="password"
+                            name="password_confirmation"
+                            class="form-control"
+                            required
+                        >
+                    </div>
+
+                    <button class="btn btn-primary w-100">
+                        Register
+                    </button>
+                </form>
+
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

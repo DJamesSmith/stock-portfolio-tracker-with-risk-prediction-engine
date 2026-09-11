@@ -29,6 +29,18 @@ class UserSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(password=password, **validated_data)
         return user
 
+    def update(self, instance, validated_data):
+        password = validated_data.pop("password", None)         # Never save a new password as plain text.
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+
+        if password:
+            instance.set_password(password)
+
+        instance.save()
+        ApplicationLogger.info(f"Profile updated: username={instance.username}")
+        return instance
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
