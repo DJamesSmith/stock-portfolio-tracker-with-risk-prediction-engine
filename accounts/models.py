@@ -44,3 +44,20 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.assigned_analyst = None
 
         super().save(*args, **kwargs)
+
+
+# Django created "users" for your actual User model.
+    
+# The other two:
+# users_groups
+# users_user_permissions
+
+# come from:
+# PermissionsMixin
+
+# because your custom user inherits:
+# AbstractBaseUser, PermissionsMixin
+
+# PermissionsMixin gives the user model Django's permission/group relationships.
+
+# ----------------------------------------------------------------------------------------------------
