@@ -11,15 +11,18 @@ ENV/
 
 # Django
 *.log
+logs/
 db.sqlite3
 media/
 staticfiles/
 
 # Environment variables
 .env
+!.env.example
 
 # macOS
 .DS_Store
+__MACOSX/
 
 # IDE
 .vscode/
@@ -39,4 +42,3 @@ htmlcov/
 
 # OS
 Thumbs.db
-
