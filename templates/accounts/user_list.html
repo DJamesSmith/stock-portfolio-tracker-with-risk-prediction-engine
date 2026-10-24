@@ -9,6 +9,16 @@
         </div>
     </div>
 
+    {% if errors %}
+        <div class="alert alert-danger">
+            {% for field, field_errors in errors.items %}
+                {% for error in field_errors %}
+                    <div>{{ error }}</div>
+                {% endfor %}
+            {% endfor %}
+        </div>
+    {% endif %}
+
     <div class="card shadow-sm">
         <div class="card-body p-0">
             <div class="table-responsive">
