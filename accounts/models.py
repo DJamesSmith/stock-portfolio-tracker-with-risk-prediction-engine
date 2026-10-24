@@ -39,9 +39,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         return f"{self.username} ({self.role})"
 
     def save(self, *args, **kwargs):
-        # An analyst or admin does not need an assigned analyst
         if self.role != self.Role.INVESTOR:
             self.assigned_analyst = None
+
+        if self.role == self.Role.ADMIN:
+            self.is_staff = True
+            self.is_superuser = True
+        else:
+            self.is_staff = False
+            self.is_superuser = False
 
         super().save(*args, **kwargs)
 

@@ -1,312 +1,188 @@
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from config.application_logger import ApplicationLogger
-
+from config.responses import get_form_errors
+from ..forms import (
+    AdminUserUpdateForm,
+    ChangePasswordForm,
+    LoginForm,
+    ProfileForm,
+    RegisterForm,
+    build_admin_update_data)
 from ..models import User
-from ..serializers import (
-    AdminUserUpdateSerializer,
-    LoginSerializer,
-    RegisterSerializer,
-    UserSerializer,
-)
+from ..utils import find_user_by_login
 
 
 def home_view(request):
     ApplicationLogger.info("Home page requested.")
-
-    return render(
-        request,
-        "accounts/home.html",
-    )
+    return render(request, "accounts/home.html")
 
 
 def register_view(request):
-    if request.method == "GET":
-        ApplicationLogger.info("Registration page requested.")
+    if request.user.is_authenticated:
+        return redirect("accounts:dashboard")
 
+    if request.method != "POST":
+        ApplicationLogger.info("Registration page requested.")
         return render(request, "accounts/register.html")
 
-    serializer = RegisterSerializer(data=request.POST)
+    form = RegisterForm(request.POST)
 
-    if serializer.is_valid():
-        user = serializer.save()
-
-        messages.success(
-            request,
-            "Investor account created successfully. Please log in.",
-        )
-
-        ApplicationLogger.info(
-            f"Template registration completed: username={user.username}"
-        )
-
+    if form.is_valid():
+        user = form.save()
+        messages.success(request, "Investor account created successfully. Please log in.")
+        ApplicationLogger.info(f"Template registration completed: username={user.username}")
         return redirect("accounts:login")
 
-    form_data = request.POST.dict()
-
-    form_data.pop("password", None)
-    form_data.pop("password_confirmation", None)
-
     ApplicationLogger.warning("Template registration validation failed.")
-
-    return render(
-        request,
-        "accounts/register.html",
-        {
-            "errors": serializer.errors,
-            "form_data": form_data,
+    context = {
+        "errors": get_form_errors(form),
+        "form_data": {
+            "username": request.POST.get("username", ""),
+            "email": request.POST.get("email", ""),
         },
-        status=400,
-    )
+    }
+    return render(request, "accounts/register.html", context, status=400)
 
 
 def login_view(request):
-    if request.method == "GET":
-        ApplicationLogger.info("Login page requested.")
-
-        return render(
-            request,
-            "accounts/login.html",
-        )
-
-    serializer = LoginSerializer(data=request.POST)
-
-    if serializer.is_valid():
-        user = serializer.validated_data["user"]
-
-        login(request, user)
-
-        messages.success(
-            request,
-            f"Welcome, {user.username}.",
-        )
-
-        ApplicationLogger.info(
-            f"Template login completed: username={user.username}"
-        )
-
+    if request.user.is_authenticated:
         return redirect("accounts:dashboard")
 
-    ApplicationLogger.warning("Template login validation failed.")
+    if request.method != "POST":
+        ApplicationLogger.info("Login page requested.")
+        return render(request, "accounts/login.html")
 
-    return render(
-        request,
-        "accounts/login.html",
-        {
-            "errors": serializer.errors,
-        },
-        status=401,
-    )
+    form = LoginForm(request.POST)
+
+    if not form.is_valid():
+        context = {"errors": get_form_errors(form)}
+        return render(request, "accounts/login.html", context, status=400)
+
+    identifier = form.cleaned_data["username_or_email"]
+    user = find_user_by_login(identifier)
+
+    if user is None or not user.check_password(form.cleaned_data["password"]):
+        ApplicationLogger.warning(f"Template login failed: identifier={identifier}")
+        context = {"errors": {"login": ["Invalid username/email or password."]}}
+        return render(request, "accounts/login.html", context, status=401)
+
+    if not user.is_active:
+        ApplicationLogger.warning(f"Inactive user attempted template login: username={user.username}")
+        context = {"errors": {"login": ["This account is inactive."]}}
+        return render(request, "accounts/login.html", context, status=403)
+
+    login(request, user)
+    messages.success(request, f"Welcome, {user.username}.")
+    ApplicationLogger.info(f"Template login completed: username={user.username}")
+    return redirect("accounts:dashboard")
 
 
 @login_required
 @require_POST
 def logout_view(request):
     username = request.user.username
-
     logout(request)
-
-    messages.success(
-        request,
-        "You have been logged out.",
-    )
-
-    ApplicationLogger.info(
-        f"Template logout completed: username={username}"
-    )
-
+    messages.success(request, "You have been logged out.")
+    ApplicationLogger.info(f"Template logout completed: username={username}")
     return redirect("accounts:login")
 
 
 @login_required
 def dashboard_view(request):
-    ApplicationLogger.info(
-        f"Dashboard requested: username={request.user.username}"
-    )
-
-    return render(
-        request,
-        "accounts/dashboard.html",
-    )
+    ApplicationLogger.info(f"Dashboard requested: username={request.user.username}")
+    context = {
+        "is_investor": request.user.role == User.Role.INVESTOR,
+        "is_analyst": request.user.role == User.Role.ANALYST,
+        "is_admin": request.user.role == User.Role.ADMIN,
+    }
+    return render(request, "accounts/dashboard.html", context)
 
 
 @login_required
 def profile_view(request):
-    if request.method == "GET":
-        ApplicationLogger.info(
-            f"Profile page requested: username={request.user.username}"
-        )
+    if request.method != "POST":
+        ApplicationLogger.info(f"Profile page requested: username={request.user.username}")
+        return render(request, "accounts/profile.html")
 
-        return render(
-            request,
-            "accounts/profile.html",
-        )
+    form = ProfileForm(request.POST, instance=request.user)
 
-    serializer = UserSerializer(
-        request.user,
-        data=request.POST,
-        partial=True,
-    )
-
-    if serializer.is_valid():
-        user = serializer.save()
-
-        messages.success(
-            request,
-            "Profile updated successfully.",
-        )
-
-        ApplicationLogger.info(
-            f"Template profile updated: username={user.username}"
-        )
-
+    if form.is_valid():
+        user = form.save()
+        messages.success(request, "Profile updated successfully.")
+        ApplicationLogger.info(f"Template profile updated: username={user.username}")
         return redirect("accounts:profile")
 
-    ApplicationLogger.warning(
-        f"Template profile validation failed: username={request.user.username}"
-    )
+    request.user.refresh_from_db()
+    ApplicationLogger.warning(f"Template profile validation failed: username={request.user.username}")
+    context = {"errors": get_form_errors(form)}
+    return render(request, "accounts/profile.html", context, status=400)
 
-    return render(
-        request,
-        "accounts/profile.html",
-        {
-            "errors": serializer.errors,
-        },
-        status=400,
-    )
+
+@login_required
+def change_password_view(request):
+    if request.method != "POST":
+        return render(request, "accounts/change_password.html")
+
+    form = ChangePasswordForm(request.user, request.POST)
+
+    if form.is_valid():
+        user = form.save()
+        update_session_auth_hash(request, user)
+        messages.success(request, "Password changed successfully.")
+        return redirect("accounts:profile")
+
+    context = {"errors": get_form_errors(form)}
+    return render(request, "accounts/change_password.html", context, status=400)
+
+
+def render_user_list(request, errors=None, status=200):
+    context = {
+        "users": User.objects.select_related("assigned_analyst").order_by("id"),
+        "analysts": User.objects.filter(role=User.Role.ANALYST, is_active=True),
+        "roles": User.Role.choices,
+        "errors": errors,
+    }
+    return render(request, "accounts/user_list.html", context, status=status)
 
 
 @login_required
 def user_list_view(request):
     if request.user.role != User.Role.ADMIN:
-        ApplicationLogger.warning(
-            f"Unauthorized user management page access: "
-            f"username={request.user.username}"
-        )
-
-        messages.error(
-            request,
-            "Only administrators can manage users.",
-        )
-
+        ApplicationLogger.warning(f"Unauthorized user management page access: username={request.user.username}")
+        messages.error(request, "Only administrators can manage users.")
         return redirect("accounts:dashboard")
 
-    users = (
-        User.objects
-        .select_related("assigned_analyst")
-        .all()
-    )
-
-    analysts = User.objects.filter(
-        role=User.Role.ANALYST,
-        is_active=True,
-    )
-
-    ApplicationLogger.info(
-        f"Admin user list requested: username={request.user.username}"
-    )
-
-    return render(
-        request,
-        "accounts/user_list.html",
-        {
-            "users": users,
-            "analysts": analysts,
-            "roles": User.Role.choices,
-        },
-    )
+    ApplicationLogger.info(f"Admin user list requested: username={request.user.username}")
+    return render_user_list(request)
 
 
 @login_required
 @require_POST
 def user_role_update_view(request, user_id):
     if request.user.role != User.Role.ADMIN:
-        ApplicationLogger.warning(
-            f"Unauthorized user role update attempt: "
-            f"username={request.user.username}"
-        )
-
-        messages.error(
-            request,
-            "Only administrators can update users.",
-        )
-
+        ApplicationLogger.warning(f"Unauthorized user role update attempt: username={request.user.username}")
+        messages.error(request, "Only administrators can update users.")
         return redirect("accounts:dashboard")
 
     user = get_object_or_404(User, id=user_id)
 
     if user.id == request.user.id:
-        messages.error(
-            request,
-            "You cannot change your own role.",
-        )
-
-        ApplicationLogger.warning(
-            f"Admin attempted to change own role: "
-            f"username={request.user.username}"
-        )
-
+        ApplicationLogger.warning(f"Admin attempted to change own role: username={request.user.username}")
+        messages.error(request, "You cannot change your own role.")
         return redirect("accounts:user-list")
 
-    role = request.POST.get("role")
-    assigned_analyst_id = request.POST.get("assigned_analyst")
+    form = AdminUserUpdateForm(build_admin_update_data(user, request.POST), instance=user)
 
-    data = {
-        "role": role,
-        "assigned_analyst": assigned_analyst_id or None,
-    }
-
-    serializer = AdminUserUpdateSerializer(
-        user,
-        data=data,
-        partial=True,
-    )
-
-    if serializer.is_valid():
-        updated_user = serializer.save()
-
-        messages.success(
-            request,
-            f"{updated_user.username} was updated successfully.",
-        )
-
-        ApplicationLogger.info(
-            f"Template admin user update completed: "
-            f"admin={request.user.username}, "
-            f"user={updated_user.username}"
-        )
-
+    if form.is_valid():
+        updated_user = form.save()
+        messages.success(request, f"{updated_user.username} was updated successfully.")
+        ApplicationLogger.info(f"Template admin user update completed: admin={request.user.username}, user={updated_user.username}")
         return redirect("accounts:user-list")
 
-    ApplicationLogger.warning(
-        f"Template admin user update validation failed: "
-        f"admin={request.user.username}, "
-        f"target={user.username}"
-    )
-
-    users = (
-        User.objects
-        .select_related("assigned_analyst")
-        .all()
-    )
-
-    analysts = User.objects.filter(
-        role=User.Role.ANALYST,
-        is_active=True,
-    )
-
-    return render(
-        request,
-        "accounts/user_list.html",
-        {
-            "users": users,
-            "analysts": analysts,
-            "roles": User.Role.choices,
-            "errors": serializer.errors,
-        },
-        status=400,
-    )
+    ApplicationLogger.warning(f"Template admin user update failed: admin={request.user.username}, target={user.username}")
+    return render_user_list(request, errors=get_form_errors(form), status=400)

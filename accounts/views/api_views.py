@@ -1,152 +1,232 @@
 from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.views import APIView
+
 from config.application_logger import ApplicationLogger
+from config.responses import api_response, get_form_errors
+from ..forms import (
+    AdminUserUpdateForm,
+    ChangePasswordForm,
+    LoginForm,
+    ProfileForm,
+    RegisterForm,
+    build_admin_update_data,
+    build_profile_data,
+)
 from ..models import User
 from ..permissions import IsAdmin
-from ..serializers import AdminUserUpdateSerializer, LoginSerializer, RegisterSerializer, UserSerializer
-from ..utils import blacklist_refresh_token, create_token_pair, decode_refresh_token, get_user_from_token_payload, is_refresh_token_blacklisted, create_access_token
+from ..serializers import UserSerializer
+from ..utils import (
+    blacklist_refresh_token,
+    create_access_token,
+    create_token_pair,
+    decode_refresh_token,
+    find_user_by_login,
+    get_user_from_token_payload,
+    is_refresh_token_blacklisted,
+)
 
 
-class RegisterView(APIView):
-    permission_classes = [AllowAny]
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def register_api(request):
+    form = RegisterForm(request.data)
 
-    def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
+    if not form.is_valid():
+        ApplicationLogger.warning("Registration validation failed.")
+        return api_response(
+            "Registration failed.",
+            errors=get_form_errors(form),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
 
-        if not serializer.is_valid():
-            ApplicationLogger.warning("Registration validation failed.")
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        user = serializer.save()
-        ApplicationLogger.info(f"Registration API completed: username={user.username}")
-
-        return Response({
-                "message": "Investor account created successfully.",
-                "user": UserSerializer(user).data,
-            }, status=status.HTTP_201_CREATED,)
-
-
-class LoginView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = LoginSerializer(data=request.data)
-
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_401_UNAUTHORIZED)
-
-        user = serializer.validated_data["user"]
-        tokens = create_token_pair(user)
-
-        return Response({
-                "message": "Login successful.",
-                "user": UserSerializer(user).data,
-                "tokens": tokens,
-            }, status=status.HTTP_200_OK)
+    user = form.save()
+    return api_response(
+        "Investor account created successfully.",
+        data=UserSerializer(user).data,
+        status_code=status.HTTP_201_CREATED,
+    )
 
 
-class RefreshTokenView(APIView):
-    permission_classes = [AllowAny]
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def login_api(request):
+    form = LoginForm(request.data)
 
-    def post(self, request):
-        refresh_token = request.data.get("refresh")
+    if not form.is_valid():
+        return api_response(
+            "Username or email and password are required.",
+            errors=get_form_errors(form),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
 
-        if not refresh_token:
-            return Response({"detail": "Refresh token is required."}, status=status.HTTP_400_BAD_REQUEST)
+    identifier = form.cleaned_data["username_or_email"]
+    password = form.cleaned_data["password"]
+    user = find_user_by_login(identifier)
 
-        payload = decode_refresh_token(refresh_token)
+    if user is None or not user.check_password(password):
+        ApplicationLogger.warning(f"Failed login attempt: identifier={identifier}")
+        return api_response("Invalid username/email or password.", status_code=status.HTTP_401_UNAUTHORIZED)
 
-        if payload is None:
-            return Response({ "detail": "Invalid or expired refresh token." }, status=status.HTTP_401_UNAUTHORIZED)
+    if not user.is_active:
+        ApplicationLogger.warning(f"Inactive user attempted login: username={user.username}")
+        return api_response("This account is inactive.", status_code=status.HTTP_403_FORBIDDEN)
 
-        if payload.get("token_type") != "refresh":
-            return Response({ "detail": "Refresh token required." }, status=status.HTTP_401_UNAUTHORIZED)
-
-        if is_refresh_token_blacklisted(payload.get("jti")):
-            return Response({ "detail": "Refresh token has been invalidated." }, status=status.HTTP_401_UNAUTHORIZED)
-
-        user = get_user_from_token_payload(payload)
-
-        if user is None:
-            return Response({ "detail": "User no longer exists." }, status=status.HTTP_401_UNAUTHORIZED)
-
-        access_token = create_access_token(user)["access"]
-        ApplicationLogger.info(f"Access token refreshed: username={user.username}")
-
-        return Response({ "access": access_token }, status=status.HTTP_200_OK)
-
-
-class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        refresh_token = request.data.get("refresh")
-
-        if not refresh_token:
-            return Response({ "detail": "Refresh token is required." }, status=status.HTTP_400_BAD_REQUEST)
-
-        payload = decode_refresh_token(refresh_token)
-
-        if payload is None:
-            return Response({ "detail": "Invalid or expired refresh token." }, status=status.HTTP_401_UNAUTHORIZED)
-
-        if payload.get("token_type") != "refresh":
-            return Response({ "detail": "Refresh token required." }, status=status.HTTP_401_UNAUTHORIZED)
-
-        if payload.get("user_id") != request.user.id:
-            return Response({ "detail": "Refresh token does not belong to this user." }, status=status.HTTP_403_FORBIDDEN)
-
-        blacklist_refresh_token(payload)
-
-        ApplicationLogger.info(f"Logout completed: username={request.user.username}")
-
-        return Response({ "message": "Logout successful." }, status=status.HTTP_200_OK)
+    ApplicationLogger.info(f"Successful API login: username={user.username}")
+    data = {
+        "user": UserSerializer(user).data,
+        "tokens": create_token_pair(user),
+    }
+    return api_response("Login successful.", data=data)
 
 
-class MeView(APIView):
-    permission_classes = [IsAuthenticated]
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def refresh_token_api(request):
+    refresh_token = request.data.get("refresh")
 
-    def get(self, request):
+    if not refresh_token:
+        return api_response(
+            "Refresh token is required.",
+            errors={"refresh": ["This field is required."]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    payload = decode_refresh_token(refresh_token)
+
+    if payload is None:
+        return api_response("Invalid or expired refresh token.", status_code=status.HTTP_401_UNAUTHORIZED)
+
+    if payload.get("token_type") != "refresh":
+        return api_response("Refresh token required.", status_code=status.HTTP_401_UNAUTHORIZED)
+
+    if is_refresh_token_blacklisted(payload.get("jti")):
+        return api_response("Refresh token has been invalidated.", status_code=status.HTTP_401_UNAUTHORIZED)
+
+    user = get_user_from_token_payload(payload)
+
+    if user is None:
+        return api_response("Refresh token is no longer valid. Please log in again.", status_code=status.HTTP_401_UNAUTHORIZED)
+
+    access_token = create_access_token(user)
+    ApplicationLogger.info(f"Access token refreshed: username={user.username}")
+    return api_response("Access token refreshed.", data={"access": access_token})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def logout_api(request):
+    refresh_token = request.data.get("refresh")
+
+    if not refresh_token:
+        return api_response(
+            "Refresh token is required.",
+            errors={"refresh": ["This field is required."]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    payload = decode_refresh_token(refresh_token)
+
+    if payload is None:
+        return api_response("Invalid or expired refresh token.", status_code=status.HTTP_401_UNAUTHORIZED)
+
+    if payload.get("token_type") != "refresh":
+        return api_response("Refresh token required.", status_code=status.HTTP_401_UNAUTHORIZED)
+
+    if payload.get("user_id") != request.user.id:
+        return api_response("Refresh token does not belong to this user.", status_code=status.HTTP_403_FORBIDDEN)
+
+    blacklist_refresh_token(payload)
+    ApplicationLogger.info(f"API logout completed: username={request.user.username}")
+    return api_response("Logout successful.")
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def me_api(request):
+    if request.method == "GET":
         ApplicationLogger.info(f"Profile requested: username={request.user.username}")
-        return Response(UserSerializer(request.user).data)
+        return api_response("Profile retrieved.", data=UserSerializer(request.user).data)
 
-    def patch(self, request):
-        serializer = UserSerializer(request.user, data=request.data, partial=True)
+    if "password" in request.data:
+        return api_response(
+            "Profile update failed.",
+            errors={"password": ["Use /api/accounts/change-password/ to change your password."]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
 
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    form = ProfileForm(build_profile_data(request.user, request.data), instance=request.user)
 
-        user = serializer.save()
-        ApplicationLogger.info(f"Profile updated: username={user.username}")
-        return Response(UserSerializer(user).data)
+    if not form.is_valid():
+        return api_response(
+            "Profile update failed.",
+            errors=get_form_errors(form),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
 
-
-class UserListView(APIView):
-    permission_classes = [IsAdmin]
-
-    def get(self, request):
-        users = User.objects.select_related("assigned_analyst").all()
-        data = [UserSerializer(user).data for user in users]
-        ApplicationLogger.info(f"Admin listed users: count={len(data)}")
-        return Response(data)
+    user = form.save()
+    ApplicationLogger.info(f"Profile updated: username={user.username}")
+    return api_response("Profile updated successfully.", data=UserSerializer(user).data)
 
 
-class UserRoleUpdateView(APIView):
-    permission_classes = [IsAdmin]
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def change_password_api(request):
+    form = ChangePasswordForm(request.user, request.data)
 
-    def patch(self, request, user_id):
-        try:
-            user = User.objects.get(id=user_id)
-        except User.DoesNotExist:
-            ApplicationLogger.warning(f"Admin attempted to update missing user: id={user_id}")
-            return Response({ "detail": "User not found." }, status=status.HTTP_404_NOT_FOUND)
+    if not form.is_valid():
+        return api_response(
+            "Password change failed.",
+            errors=get_form_errors(form),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
 
-        serializer = AdminUserUpdateSerializer(user, data=request.data, partial=True)
+    user = form.save()
+    data = {"tokens": create_token_pair(user)}
+    return api_response("Password changed successfully. Older tokens no longer work.", data=data)
 
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        updated_user = serializer.save()
-        return Response(UserSerializer(updated_user).data)
+@api_view(["GET"])
+@permission_classes([IsAdmin])
+def user_list_api(request):
+    users = User.objects.select_related("assigned_analyst").order_by("id")
+
+    paginator = PageNumberPagination()
+    page = paginator.paginate_queryset(users, request)
+
+    data = {
+        "count": paginator.page.paginator.count,
+        "next": paginator.get_next_link(),
+        "previous": paginator.get_previous_link(),
+        "results": UserSerializer(page, many=True).data,
+    }
+
+    ApplicationLogger.info(f"Admin listed users: admin={request.user.username}, count={data['count']}")
+    return api_response("Users retrieved.", data=data)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAdmin])
+def user_update_api(request, user_id):
+    user = User.objects.filter(id=user_id).first()
+
+    if user is None:
+        ApplicationLogger.warning(f"Admin attempted to update missing user: id={user_id}")
+        return api_response("User not found.", status_code=status.HTTP_404_NOT_FOUND)
+
+    if user.id == request.user.id:
+        ApplicationLogger.warning(f"Admin attempted to change own role: username={request.user.username}")
+        return api_response("You cannot change your own role.", status_code=status.HTTP_403_FORBIDDEN)
+
+    form = AdminUserUpdateForm(build_admin_update_data(user, request.data), instance=user)
+
+    if not form.is_valid():
+        return api_response(
+            "User update failed.",
+            errors=get_form_errors(form),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    updated_user = form.save()
+    return api_response("User updated successfully.", data=UserSerializer(updated_user).data)

@@ -1,26 +1,25 @@
-# Purpose:
-# Central application-wide logger.
-# Every application event should be written through ApplicationLogger.
-
 import logging
+import time
 from pathlib import Path
 
 
 class ApplicationLogger:
-    """Small wrapper around Python's logging module."""
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    LOG_DIR = BASE_DIR / "logs"
+    LOG_FILE = LOG_DIR / "app.log"
 
-    LOG_FILE = Path("app.log")
-
-    logger = logging.getLogger("stock_tracker")
+    logger = logging.getLogger("stock_risk_engine")
 
     if not logger.handlers:
+        LOG_DIR.mkdir(exist_ok=True)
         logger.setLevel(logging.INFO)
+        logger.propagate = False
 
-        file_handler = logging.FileHandler(LOG_FILE, mode="a")
+        file_handler = logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8")
         formatter = logging.Formatter(
-            fmt="%(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%d-%m-%Y %H:%M:%S",
-        )
+            fmt="%(asctime)s UTC - %(levelname)s - %(message)s",
+            datefmt="%d-%m-%Y %H:%M:%S")
+        formatter.converter = time.gmtime
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 

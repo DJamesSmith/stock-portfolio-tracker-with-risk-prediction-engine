@@ -2,7 +2,6 @@ from django.contrib.auth.base_user import BaseUserManager
 from config.application_logger import ApplicationLogger
 
 
-# Creates normal users and superusers for the custom User model.
 class UserManager(BaseUserManager):
     def create_user(self, username, email, password=None, **extra_fields):
         if not username:

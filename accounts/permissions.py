@@ -47,7 +47,6 @@ class IsAnalyst(BasePermission):
         return allowed
 
 
-# Useful for user profile operations: the user can edit their own profile, while admin can manage users.
 class IsAdminOrSelf(BasePermission):
     def has_object_permission(self, request, view, obj):
         allowed = (
