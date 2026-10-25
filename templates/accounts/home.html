@@ -7,8 +7,13 @@
         <h1 class="display-5 fw-bold"> Stock Portfolio Risk & Forecasting Platform </h1>
         <p class="lead text-muted mt-3"> Portfolio management, market data, risk classification and directional forecasting. </p>
         <div class="mt-4">
-            <a href="{% url 'accounts:login' %}" class="btn btn-dark btn-lg me-2"> Login </a>
-            <a href="{% url 'accounts:register' %}" class="btn btn-primary btn-lg"> Create Investor Account </a>
+            {% if user.is_authenticated %}
+                <p class="mb-3"> You are logged in as <strong>{{ user.username }}</strong> ({{ user.get_role_display }}). </p>
+                <a href="{% url 'accounts:dashboard' %}" class="btn btn-dark btn-lg"> Go to Dashboard </a>
+            {% else %}
+                <a href="{% url 'accounts:login' %}" class="btn btn-dark btn-lg me-2"> Login </a>
+                <a href="{% url 'accounts:register' %}" class="btn btn-primary btn-lg"> Create Investor Account </a>
+            {% endif %}
         </div>
     </div>
 </div>
