@@ -139,10 +139,21 @@ REST_FRAMEWORK = {
     },
 }
 
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS")
+CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
 
 # psql -U django_user -d stock_risk_prediction_db
 # CREATE DATABASE stock_risk_prediction_db OWNER django_user;
+
+
+# how to find my Mac's IP ?
+# ipconfig getifaddr en0
+# 192.168.0.105
+# This change is to be made in flutter app's baseurl, django's settings.py
+
+
+# redis-server
+# celery -A stock_risk_engine worker -l info
+
 
 # NOTES: https://docs.google.com/document/d/100nUGdp2ZRZcKDNrX7mGhSPQGnLvMLWaZF9840ImHCo/edit?tab=t.0#heading=h.tn77ef5fg1dv
 
