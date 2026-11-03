@@ -1556,4 +1556,5 @@ market_data/management/commands/load_price_history.py
 
 
 I want to be able to call the functions in these files through the templates.
+Also, I removed all the tests.py from every app. Don't need these yet.
 What are they used for ?
