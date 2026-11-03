@@ -124,8 +124,12 @@ CACHES = {
 
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS"))
 
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
+CELERY_BROKER_URL = env_required("CELERY_BROKER_URL")
+CELERY_RESULT_BACKEND = env_required("CELERY_RESULT_BACKEND")
+
+if len({CELERY_BROKER_URL, CELERY_RESULT_BACKEND, REDIS_URL, TOKEN_BLACKLIST_REDIS_URL}) != 4:
+    raise ImproperlyConfigured("CELERY_BROKER_URL, CELERY_RESULT_BACKEND, REDIS_URL and TOKEN_BLACKLIST_REDIS_URL must each use a different Redis database.")
+
 CELERY_TIMEZONE = "UTC"
 CELERY_TASK_TRACK_STARTED = True
 
@@ -167,9 +171,10 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
-    "EXCEPTION_HANDLER": "config.exception_handler.custom_exception_handler",
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
+    "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
     "PAGE_SIZE": 20,
+    "NUM_PROXIES": 0,
     "DEFAULT_THROTTLE_RATES": {
         "login": os.getenv("LOGIN_THROTTLE_RATE", "5/minute"),
         "register": os.getenv("REGISTER_THROTTLE_RATE", "10/hour"),
