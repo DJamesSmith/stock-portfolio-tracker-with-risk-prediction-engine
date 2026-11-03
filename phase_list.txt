@@ -834,7 +834,7 @@ Goal:
   - A holding is deleted.
   - Price ingestion changes a relevant ticker's data.
   - ML recomputation changes a holding's risk/forecast fields.
-- Query optimisation:
+- Query optimization:
   - Use select_related for Holding -> Portfolio -> User.
   - Use prefetch_related for portfolio holdings.
   - Use annotations for counts.
@@ -1503,3 +1503,57 @@ FINAL PROJECT SEQUENCE:
 - Complete Phase 10 Docker/deployment readiness and then future enhancements.
 
 END OF IMPLEMENTATION PLAN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+In most of the phases, I'm seeing that all the controls are going toward the command line. The whole point of doing this in Django is to have full control using GUI in templates. I should be able to upload the files or folders from the templates instead of typing a command to upload a dataset and train the models.
+
+Regenerate the project from scratch. Provide only the files that have been updated. Make changes for Phases 3, 4 and 5 if required. I want to be able to use the templates more instead of having to run these commands:
+python manage.py load_price_history /path/to/kaggle/csv_folder
+
+And it's not just this command it's the files in these directories:
+analytics/management/commands/train_models.py
+analytics/training/dataset.py
+analytics/training/train_forecast.py
+analytics/training/train_risk.py
+
+market_data/management/commands/load_price_history.py
+
+
+I want to be able to call the functions in these files through the templates.
+What are they used for ?
