@@ -1,5 +1,6 @@
 import logging
 import time
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
@@ -7,6 +8,8 @@ class ApplicationLogger:
     BASE_DIR = Path(__file__).resolve().parent.parent
     LOG_DIR = BASE_DIR / "logs"
     LOG_FILE = LOG_DIR / "app.log"
+    MAX_LOG_BYTES = 5 * 1024 * 1024
+    BACKUP_COUNT = 5
 
     logger = logging.getLogger("stock_risk_engine")
 
@@ -15,7 +18,7 @@ class ApplicationLogger:
         logger.setLevel(logging.INFO)
         logger.propagate = False
 
-        file_handler = logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8")
+        file_handler = RotatingFileHandler(LOG_FILE, maxBytes=MAX_LOG_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8")
         formatter = logging.Formatter(
             fmt="%(asctime)s UTC - %(levelname)s - %(message)s",
             datefmt="%d-%m-%Y %H:%M:%S")

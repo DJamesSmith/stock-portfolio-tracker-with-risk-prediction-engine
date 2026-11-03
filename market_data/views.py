@@ -82,7 +82,11 @@ def refresh_ticker_api(request, ticker):
         return invalid_ticker_response(ticker_form)
 
     ticker = ticker_form.cleaned_data["ticker"]
-    task = refresh_single_ticker.delay(ticker)
+    try:
+        task = refresh_single_ticker.delay(ticker)
+    except Exception as error:
+        ApplicationLogger.error(f"Could not queue ticker refresh: ticker={ticker}, error={error}")
+        return api_response("The background worker is not available. Please try again later.", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     ApplicationLogger.info(f"Ticker refresh queued: ticker={ticker}, task_id={task.id}, user={request.user.username}")
     return api_response(f"Price refresh for {ticker} has been queued.", data={"ticker": ticker, "task_id": task.id}, status_code=status.HTTP_202_ACCEPTED)

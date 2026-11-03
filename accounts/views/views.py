@@ -21,7 +21,7 @@ from ..utils import find_user_by_login
 
 def home_view(request):
     ApplicationLogger.info("Home page requested.")
-    return render(request, "accounts/home.html")
+    return render(request, "accounts/dashboard.html")
 
 
 def register_view(request):
