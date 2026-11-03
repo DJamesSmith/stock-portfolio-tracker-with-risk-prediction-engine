@@ -1,10 +1,11 @@
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from config.application_logger import ApplicationLogger
 from config.responses import api_response, get_form_errors
+from core.pagination import StandardPagination
+from core.throttles import LoginRateThrottle, RegisterRateThrottle
 from ..forms import (
     AdminUserUpdateForm,
     ChangePasswordForm,
@@ -30,6 +31,7 @@ from ..utils import (
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([RegisterRateThrottle])
 def register_api(request):
     form = RegisterForm(request.data)
 
@@ -51,6 +53,7 @@ def register_api(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([LoginRateThrottle])
 def login_api(request):
     form = LoginForm(request.data)
 
@@ -192,7 +195,7 @@ def change_password_api(request):
 def user_list_api(request):
     users = User.objects.select_related("assigned_analyst").order_by("id")
 
-    paginator = PageNumberPagination()
+    paginator = StandardPagination()
     page = paginator.paginate_queryset(users, request)
 
     data = {

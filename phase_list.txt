@@ -469,10 +469,6 @@ Goal:
 - The exact database driver and dependency choices should remain consistent with the project's selected implementation and requirements.
 
 6.2 Split Django settings
-- Create a settings package with:
-  - base.py — common settings.
-  - development.py — local development settings.
-  - production.py — deployment settings.
 - Move environment-dependent values out of hard-coded settings.
 - Read the following from environment variables:
   - DEBUG.
@@ -485,8 +481,6 @@ Goal:
   - WSGI.
   - ASGI.
   - Celery.
-- Add a committed .env.example.
-- Do not include real credentials or secrets in .env.example.
 
 6.3 Shared core app files
 - core/permissions.py:
@@ -512,7 +506,7 @@ Goal:
   - MarketRefreshThrottle.
   - Use the configured default cache so Redis backs the throttle counters.
 - core/cache.py:
-  - Centralise cache-key generation.
+  - Centralize cache-key generation.
   - Provide cache invalidation helpers for portfolio summaries and risk summaries.
   - Avoid scattering cache-key strings across multiple apps.
 
@@ -546,7 +540,7 @@ Goal:
   - pip install -r requirements/development.txt
 - Celery Worker starts.
 - Celery Beat starts.
-- The ping task executes and returns successfully.
+- The ping task executes and returns successfully. Provide the command to check the ping for celery.
 - A login request exceeding its throttle limit returns HTTP 429.
 - API errors use the standard response shape.
 - Settings work through the intended environment-specific modules.

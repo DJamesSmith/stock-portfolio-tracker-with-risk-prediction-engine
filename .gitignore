@@ -42,3 +42,6 @@ htmlcov/
 
 # OS
 Thumbs.db
+
+# Celery
+celerybeat-schedule*

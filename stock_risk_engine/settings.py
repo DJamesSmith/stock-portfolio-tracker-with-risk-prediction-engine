@@ -132,3 +132,5 @@ ApplicationLogger.info("Django settings loaded.")
 
 # Dataset taken from:
 # https://www.kaggle.com/datasets/innacampo/s-and-p-500-stocks-daily-historical-data-10-years
+
+# source ../learning_django/env_machine_learning/bin/activate

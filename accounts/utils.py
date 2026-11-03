@@ -3,9 +3,10 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 from django.conf import settings
-from django.core.cache import cache
+from django.core.cache import caches
 
 from config.application_logger import ApplicationLogger
+from core.cache import blacklisted_refresh_token_key
 from .models import User
 
 
@@ -72,7 +73,8 @@ def decode_refresh_token(token):
 
 
 def is_refresh_token_blacklisted(jti):
-    return cache.get(f"blacklisted_refresh:{jti}") is True                                      # blacklisted_refresh:abc123; The token would need to be the same to be detected as blacklisted
+    blacklist = caches["token_blacklist"]
+    return blacklist.get(blacklisted_refresh_token_key(jti)) is True
 
 
 def blacklist_refresh_token(payload):
@@ -83,7 +85,8 @@ def blacklist_refresh_token(payload):
         return False
 
     remaining_seconds = max(int(exp - datetime.now(timezone.utc).timestamp()), 1)
-    cache.set(f"blacklisted_refresh:{jti}", True, timeout=remaining_seconds)                    # blacklisted_refresh:abc123; The token would need to be the same to be detected as blacklisted
+    blacklist = caches["token_blacklist"]
+    blacklist.set(blacklisted_refresh_token_key(jti), True, timeout=remaining_seconds)
     ApplicationLogger.info(f"Refresh token blacklisted: jti={jti}")
     return True
 
