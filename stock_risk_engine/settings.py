@@ -102,7 +102,7 @@ CACHES = {
     }
 }
 
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
 CELERY_RESULT_BACKEND = os.getenv(
     "CELERY_RESULT_BACKEND",
     "redis://localhost:6379/1",
@@ -120,11 +120,10 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
 }
 
-CORS_ALLOWED_ORIGINS = [ "http://localhost:3000", "http://127.0.0.1:3000" ]
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS")
 
 # ApplicationLogger is configured once when Django imports the settings module.
 from config.application_logger import ApplicationLogger  # noqa: E402
-
 ApplicationLogger.info("Django settings loaded.")
 
 
