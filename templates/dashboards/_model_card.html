@@ -1,0 +1,26 @@
+{% load dashboard_tags %}
+<div class="col-md-6">
+    <div class="card shadow-sm h-100">
+        <div class="card-body">
+            <h5>{{ title }}</h5>
+            {% if model %}
+                <p class="mb-1"><strong>Version:</strong> {{ model.version }}</p>
+                <p class="mb-1"><strong>Algorithm:</strong> {{ model.algorithm }}</p>
+                <p class="mb-1"><strong>Trained at:</strong> {{ model.trained_at|to_datetime|date:"d M Y, H:i" }} UTC</p>
+                <p class="mb-3"><strong>Tickers used:</strong> {{ model.tickers_count }}</p>
+                <table class="table table-sm mb-3">
+                    <thead>
+                        <tr><th>Metric</th><th class="text-end">Validation</th><th class="text-end">Test</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Accuracy</td><td class="text-end">{{ model.validation_metrics.accuracy }}</td><td class="text-end">{{ model.test_metrics.accuracy }}</td></tr>
+                        <tr><td>Macro F1</td><td class="text-end">{{ model.validation_metrics.macro_f1 }}</td><td class="text-end">{{ model.test_metrics.macro_f1 }}</td></tr>
+                    </tbody>
+                </table>
+                <p class="small text-muted mb-0">{{ model.comparison }}</p>
+            {% else %}
+                <p class="text-muted mb-0">No trained model found. Run: python manage.py train_models</p>
+            {% endif %}
+        </div>
+    </div>
+</div>

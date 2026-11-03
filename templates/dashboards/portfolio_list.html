@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %} Portfolios {% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h1>Portfolios</h1>
+    <p class="text-muted mb-0">
+        {% if user.role == "admin" %}All portfolios in the system.
+        {% elif user.role == "analyst" %}Portfolios of investors assigned to you (read-only).
+        {% else %}Your portfolios.{% endif %}
+    </p>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if portfolios %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Name</th>
+                            {% if user.role != "investor" %}<th>Owner</th>{% endif %}
+                            <th class="text-end">Holdings</th>
+                            <th class="text-end">Total value ($)</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for portfolio in portfolios %}
+                            <tr>
+                                <td><a href="{% url 'dashboards:portfolio-detail' portfolio.id %}">{{ portfolio.name }}</a></td>
+                                {% if user.role != "investor" %}<td>{{ portfolio.owner.username }}</td>{% endif %}
+                                <td class="text-end">{{ portfolio.holdings_count }}</td>
+                                <td class="text-end">{{ portfolio.total_value }}</td>
+                                <td>{{ portfolio.created_at|slice:":10" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted p-4 mb-0">No portfolios to show.</p>
+        {% endif %}
+    </div>
+</div>
+
+{% if page.has_other_pages %}
+    <nav class="mt-3">
+        <ul class="pagination">
+            {% if page.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page={{ page.previous_page_number }}">Previous</a></li>
+            {% endif %}
+            <li class="page-item disabled"><span class="page-link">Page {{ page.number }} of {{ page.paginator.num_pages }}</span></li>
+            {% if page.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ page.next_page_number }}">Next</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+{% endif %}
+{% endblock %}

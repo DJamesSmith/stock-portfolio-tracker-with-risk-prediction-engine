@@ -1,0 +1,54 @@
+{% load dashboard_tags %}
+<div class="row g-3 mb-4">
+    {% include "dashboards/_stat_card.html" with title="Portfolios" value=dashboard.portfolio_count %}
+    {% include "dashboards/_stat_card.html" with title="Holdings" value=dashboard.holding_count %}
+    {% include "dashboards/_stat_card.html" with title="Total value ($)" value=dashboard.current_value %}
+    {% include "dashboards/_stat_card.html" with title="Gain / loss ($)" value=dashboard.gain_loss css_class=dashboard.gain_loss|gain_class %}
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5>Risk across all portfolios</h5>
+        {% include "dashboards/_risk_counts.html" with counts=dashboard.risk_distribution %}
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">My portfolios</h5>
+            <a href="{% url 'dashboards:portfolio-list' %}" class="btn btn-sm btn-outline-dark">View all</a>
+        </div>
+
+        {% if dashboard.portfolios %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th class="text-end">Holdings</th>
+                            <th class="text-end">Cost ($)</th>
+                            <th class="text-end">Value ($)</th>
+                            <th class="text-end">Gain / loss ($)</th>
+                            <th class="text-end">%</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in dashboard.portfolios %}
+                            <tr>
+                                <td><a href="{% url 'dashboards:portfolio-detail' row.id %}">{{ row.name }}</a></td>
+                                <td class="text-end">{{ row.holdings_count }}</td>
+                                <td class="text-end">{{ row.total_cost }}</td>
+                                <td class="text-end">{{ row.current_value }}</td>
+                                <td class="text-end {{ row.gain_loss|gain_class }}">{{ row.gain_loss }}</td>
+                                <td class="text-end {{ row.gain_loss|gain_class }}">{{ row.gain_loss_percent }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted mb-0">You have no portfolios yet. Create one through the API.</p>
+        {% endif %}
+    </div>
+</div>

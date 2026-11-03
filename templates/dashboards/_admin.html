@@ -1,0 +1,44 @@
+{% load dashboard_tags %}
+<div class="row g-3 mb-4">
+    {% include "dashboards/_stat_card.html" with title="Users" value=dashboard.users.total %}
+    {% include "dashboards/_stat_card.html" with title="Portfolios" value=dashboard.portfolio_count %}
+    {% include "dashboards/_stat_card.html" with title="Holdings" value=dashboard.holding_count %}
+    {% include "dashboards/_stat_card.html" with title="Tickers tracked" value=dashboard.tickers_tracked %}
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5>Users by role</h5>
+                <ul class="list-unstyled mb-3">
+                    <li>Investors: <strong>{{ dashboard.users.investor }}</strong></li>
+                    <li>Analysts: <strong>{{ dashboard.users.analyst }}</strong></li>
+                    <li>Admins: <strong>{{ dashboard.users.admin }}</strong></li>
+                </ul>
+                <a href="{% url 'accounts:user-list' %}" class="btn btn-sm btn-dark">Manage users</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5>Market data</h5>
+                <p class="mb-1">Last ingestion: <strong>{% if dashboard.market_data.last_ingested_at %}{{ dashboard.market_data.last_ingested_at|to_datetime|date:"d M Y, H:i" }} UTC{% else %}Not recorded yet{% endif %}</strong></p>
+                <p class="mb-0">Latest trading date stored: <strong>{{ dashboard.market_data.latest_price_date|default:"No data" }}</strong></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5>System-wide risk</h5>
+        {% include "dashboards/_risk_counts.html" with counts=dashboard.risk_distribution %}
+    </div>
+</div>
+
+<div class="row g-4">
+    {% include "dashboards/_model_card.html" with title="Risk model" model=dashboard.models.risk %}
+    {% include "dashboards/_model_card.html" with title="Forecast model" model=dashboard.models.forecast %}
+</div>

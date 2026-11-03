@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% load static dashboard_tags %}
+{% block title %} {{ holding.ticker }} {% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{% url 'dashboards:portfolio-detail' portfolio.id %}" class="small">&larr; {{ portfolio.name }}</a>
+    <h1 class="mt-2">{{ holding.ticker }}</h1>
+    <p class="text-muted mb-0">{{ holding.quantity }} shares bought at ${{ holding.buy_price }} on {{ holding.buy_date }}</p>
+</div>
+
+<div class="row g-3 mb-4">
+    {% include "dashboards/_stat_card.html" with title="Current price ($)" value=position.current_price|floatformat:2|default:"-" %}
+    {% include "dashboards/_stat_card.html" with title="Cost ($)" value=position.cost|floatformat:2 %}
+    {% include "dashboards/_stat_card.html" with title="Current value ($)" value=position.current_value|floatformat:2|default:"-" %}
+    {% include "dashboards/_stat_card.html" with title="Gain / loss ($)" value=position.gain_loss|floatformat:2|default:"-" css_class=position.gain_loss|gain_class %}
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5>Risk</h5>
+                <p class="fs-4 mb-1">{% include "dashboards/_risk_badge.html" with label=holding.risk_label %}</p>
+                <p class="mb-1 text-muted">Model confidence: {{ holding.risk_score|as_percent }}</p>
+                <p class="mb-0 small text-muted">Model: {{ holding.risk_model_version|default:"-" }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5>Next trading day</h5>
+                <p class="fs-4 mb-1">{% include "dashboards/_direction.html" with direction=holding.predicted_direction confidence=holding.prediction_confidence %}</p>
+                <p class="mb-1 text-muted">
+                    Last predicted:
+                    {% if holding.last_predicted_at %}{{ holding.last_predicted_at|to_datetime|date:"d M Y, H:i" }} UTC{% else %}never{% endif %}
+                </p>
+                <p class="mb-0 small text-muted">Model: {{ holding.forecast_model_version|default:"-" }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+            <h5 class="mb-0">Price history</h5>
+            <form method="GET" class="d-flex flex-wrap gap-2 align-items-end">
+                <div>
+                    <label class="form-label small mb-0" for="start">From</label>
+                    <input type="date" class="form-control form-control-sm" id="start" name="start" value="{{ trend.start }}">
+                </div>
+                <div>
+                    <label class="form-label small mb-0" for="end">To</label>
+                    <input type="date" class="form-control form-control-sm" id="end" name="end" value="{{ trend.end }}">
+                </div>
+                <button type="submit" class="btn btn-sm btn-dark">Show</button>
+            </form>
+        </div>
+
+        {% if errors %}
+            <div class="alert alert-danger">
+                {% for field, field_errors in errors.items %}
+                    {% for error in field_errors %}<div>{{ error }}</div>{% endfor %}
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        {% if trend.points_count %}
+            <canvas id="price-chart" height="110"></canvas>
+            <p class="small text-muted mt-2 mb-0">{{ trend.points_count }} trading days. The dashed line is your buy price.</p>
+        {% else %}
+            <p class="text-muted mb-0">No price data for {{ holding.ticker }} in this date range.</p>
+        {% endif %}
+    </div>
+</div>
+
+{{ trend|json_script:"price-chart-data" }}
+{% endblock %}
+
+{% block scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+    <script src="{% static 'js/price_chart.js' %}"></script>
+{% endblock %}

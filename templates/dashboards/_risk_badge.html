@@ -1,0 +1,6 @@
+{% load dashboard_tags %}
+{% if label %}
+    <span class="badge text-bg-{{ label|risk_colour }}">{{ label|title }}</span>
+{% else %}
+    <span class="badge text-bg-secondary">Not rated</span>
+{% endif %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load dashboard_tags %}
+{% block title %} {{ portfolio.name }} {% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{% url 'dashboards:portfolio-list' %}" class="small">&larr; All portfolios</a>
+    <h1 class="mt-2">{{ portfolio.name }}</h1>
+    <p class="text-muted mb-0">Owner: {{ summary.owner.username }}{% if portfolio.description %} &middot; {{ portfolio.description }}{% endif %}</p>
+</div>
+
+<div class="row g-3 mb-4">
+    {% include "dashboards/_stat_card.html" with title="Holdings" value=summary.holdings_count %}
+    {% include "dashboards/_stat_card.html" with title="Total cost ($)" value=summary.total_cost %}
+    {% include "dashboards/_stat_card.html" with title="Current value ($)" value=summary.current_value %}
+    {% include "dashboards/_stat_card.html" with title="Gain / loss ($)" value=summary.unrealised_gain_loss css_class=summary.unrealised_gain_loss|gain_class %}
+    {% include "dashboards/_stat_card.html" with title="Gain / loss (%)" value=summary.unrealised_gain_loss_percent css_class=summary.unrealised_gain_loss|gain_class %}
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5>Risk and forecast</h5>
+        {% include "dashboards/_risk_counts.html" with counts=risk_summary.risk_distribution %}
+        <p class="mt-3 mb-0 text-muted">
+            Next-day forecast: {{ risk_summary.direction_distribution.up }} up,
+            {{ risk_summary.direction_distribution.down }} down,
+            {{ risk_summary.direction_distribution.not_predicted }} not predicted.
+        </p>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if holdings %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Ticker</th>
+                            <th class="text-end">Quantity</th>
+                            <th class="text-end">Buy price</th>
+                            <th class="text-end">Current price</th>
+                            <th class="text-end">Value ($)</th>
+                            <th class="text-end">Gain / loss ($)</th>
+                            <th>Risk</th>
+                            <th>Next day</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in holdings %}
+                            <tr>
+                                <td><a href="{% url 'dashboards:holding-detail' row.id %}">{{ row.ticker }}</a></td>
+                                <td class="text-end">{{ row.quantity }}</td>
+                                <td class="text-end">{{ row.buy_price }}</td>
+                                <td class="text-end">{{ row.current_price|default:"-" }}</td>
+                                <td class="text-end">{{ row.current_value }}</td>
+                                <td class="text-end {{ row.gain_loss|gain_class }}">{{ row.gain_loss }} ({{ row.gain_loss_percent }}%)</td>
+                                <td>{% include "dashboards/_risk_badge.html" with label=row.risk_label %}</td>
+                                <td>{% include "dashboards/_direction.html" with direction=row.predicted_direction confidence=row.prediction_confidence %}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted p-4 mb-0">This portfolio has no holdings yet.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

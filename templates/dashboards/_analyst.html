@@ -1,0 +1,94 @@
+{% load dashboard_tags %}
+<div class="row g-3 mb-4">
+    {% include "dashboards/_stat_card.html" with title="Assigned clients" value=dashboard.client_count %}
+    {% include "dashboards/_stat_card.html" with title="Portfolios" value=dashboard.portfolio_count %}
+    {% include "dashboards/_stat_card.html" with title="Holdings" value=dashboard.holding_count %}
+    {% include "dashboards/_stat_card.html" with title="Combined value ($)" value=dashboard.current_value %}
+    {% include "dashboards/_stat_card.html" with title="Combined gain / loss ($)" value=dashboard.gain_loss css_class=dashboard.gain_loss|gain_class %}
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5>Combined risk across clients</h5>
+        {% include "dashboards/_risk_counts.html" with counts=dashboard.risk_distribution %}
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5 class="mb-3">Clients</h5>
+        {% if dashboard.clients %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Investor</th>
+                            <th class="text-end">Portfolios</th>
+                            <th class="text-end">Holdings</th>
+                            <th class="text-end">Value ($)</th>
+                            <th class="text-end">Gain / loss ($)</th>
+                            <th>Risk (L / M / H / NR)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for client in dashboard.clients %}
+                            <tr>
+                                <td>{{ client.username }}<br><small class="text-muted">{{ client.email }}</small></td>
+                                <td class="text-end">{{ client.portfolio_count }}</td>
+                                <td class="text-end">{{ client.holding_count }}</td>
+                                <td class="text-end">{{ client.current_value }}</td>
+                                <td class="text-end {{ client.gain_loss|gain_class }}">{{ client.gain_loss }} ({{ client.gain_loss_percent }}%)</td>
+                                <td>
+                                    {{ client.risk_distribution.low }} / {{ client.risk_distribution.medium }} /
+                                    <span class="text-danger fw-semibold">{{ client.risk_distribution.high }}</span> /
+                                    {{ client.risk_distribution.not_rated }}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted mb-0">No investors are assigned to you yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <h5 class="mb-3">High-risk holdings <span class="badge text-bg-danger">{{ dashboard.high_risk_count }}</span></h5>
+        {% if dashboard.high_risk_holdings %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Ticker</th>
+                            <th>Investor</th>
+                            <th>Portfolio</th>
+                            <th class="text-end">Value ($)</th>
+                            <th class="text-end">Risk score</th>
+                            <th>Next day</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in dashboard.high_risk_holdings %}
+                            <tr>
+                                <td><a href="{% url 'dashboards:holding-detail' row.holding_id %}">{{ row.ticker }}</a></td>
+                                <td>{{ row.investor.username }}</td>
+                                <td><a href="{% url 'dashboards:portfolio-detail' row.portfolio_id %}">{{ row.portfolio_name }}</a></td>
+                                <td class="text-end">{{ row.current_value }}</td>
+                                <td class="text-end">{{ row.risk_score|as_percent }}</td>
+                                <td>{% include "dashboards/_direction.html" with direction=row.predicted_direction confidence=row.prediction_confidence %}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if dashboard.high_risk_count > dashboard.high_risk_holdings|length %}
+                <p class="text-muted small mt-2 mb-0">Showing the {{ dashboard.high_risk_holdings|length }} highest-scoring holdings.</p>
+            {% endif %}
+        {% else %}
+            <p class="text-muted mb-0">No high-risk holdings right now.</p>
+        {% endif %}
+    </div>
+</div>

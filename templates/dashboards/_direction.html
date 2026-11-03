@@ -1,0 +1,8 @@
+{% load dashboard_tags %}
+{% if direction == "up" %}
+    <span class="text-success fw-semibold">&#9650; Up</span> <small class="text-muted">({{ confidence|as_percent }})</small>
+{% elif direction == "down" %}
+    <span class="text-danger fw-semibold">&#9660; Down</span> <small class="text-muted">({{ confidence|as_percent }})</small>
+{% else %}
+    <span class="text-muted">No forecast</span>
+{% endif %}
