@@ -17,10 +17,11 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    "rest_framework",
-    "corsheaders",
+    'rest_framework',
+    'corsheaders',
 
-    "accounts",
+    'accounts',
+    'core',
 ]
 
 MIDDLEWARE = [
@@ -94,16 +95,32 @@ ACCESS_TOKEN_LIFETIME_MINUTES = int(os.getenv("ACCESS_TOKEN_LIFETIME_MINUTES"))
 REFRESH_TOKEN_LIFETIME_DAYS = int(os.getenv("REFRESH_TOKEN_LIFETIME_DAYS"))
 
 REDIS_URL = os.getenv("REDIS_URL")
+TOKEN_BLACKLIST_REDIS_URL = os.getenv("TOKEN_BLACKLIST_REDIS_URL")
 
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": REDIS_URL,
-    }
+    },
+    "token_blacklist": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": TOKEN_BLACKLIST_REDIS_URL,
+    },
 }
+
+CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS"))
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
+CELERY_TIMEZONE = "UTC"
+CELERY_TASK_TRACK_STARTED = True
+
+CELERY_BEAT_SCHEDULE = {
+    "ping-every-15-minutes": {
+        "task": "core.tasks.ping",
+        "schedule": 15 * 60,
+    },
+}
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -115,6 +132,11 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "config.exception_handler.custom_exception_handler",
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+    "DEFAULT_THROTTLE_RATES": {
+        "login": os.getenv("LOGIN_THROTTLE_RATE", "5/minute"),
+        "register": os.getenv("REGISTER_THROTTLE_RATE", "10/hour"),
+        "market_refresh": os.getenv("MARKET_REFRESH_THROTTLE_RATE", "10/hour"),
+    },
 }
 
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS")
