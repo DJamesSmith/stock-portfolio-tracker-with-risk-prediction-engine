@@ -141,12 +141,6 @@ REST_FRAMEWORK = {
 
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS")
 
-# ApplicationLogger is configured once when Django imports the settings module.
-from config.application_logger import ApplicationLogger  # noqa: E402
-ApplicationLogger.info("Django settings loaded.")
-
-
-
 # psql -U django_user -d stock_risk_prediction_db
 # CREATE DATABASE stock_risk_prediction_db OWNER django_user;
 
