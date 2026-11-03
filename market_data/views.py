@@ -14,11 +14,7 @@ from .tasks import refresh_single_ticker
 
 
 def invalid_ticker_response(form):
-    return api_response(
-        "Invalid ticker.",
-        errors=get_form_errors(form),
-        status_code=status.HTTP_400_BAD_REQUEST,
-    )
+    return api_response("Invalid ticker.", errors=get_form_errors(form), status_code=status.HTTP_400_BAD_REQUEST)
 
 
 def no_data_response(ticker):
@@ -57,8 +53,7 @@ def price_history_api(request, ticker):
         return api_response(
             "Invalid date range.",
             errors=get_form_errors(filter_form),
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
+            status_code=status.HTTP_400_BAD_REQUEST)
 
     if latest_price(ticker) is None:
         return no_data_response(ticker)
@@ -90,8 +85,4 @@ def refresh_ticker_api(request, ticker):
     task = refresh_single_ticker.delay(ticker)
 
     ApplicationLogger.info(f"Ticker refresh queued: ticker={ticker}, task_id={task.id}, user={request.user.username}")
-    return api_response(
-        f"Price refresh for {ticker} has been queued.",
-        data={"ticker": ticker, "task_id": task.id},
-        status_code=status.HTTP_202_ACCEPTED,
-    )
+    return api_response(f"Price refresh for {ticker} has been queued.", data={"ticker": ticker, "task_id": task.id}, status_code=status.HTTP_202_ACCEPTED)

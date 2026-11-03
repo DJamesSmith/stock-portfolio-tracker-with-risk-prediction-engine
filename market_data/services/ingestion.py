@@ -3,6 +3,7 @@ from decimal import Decimal
 import pandas as pd
 
 from config.application_logger import ApplicationLogger
+from portfolios.cache import clear_summary_cache_for_ticker
 from ..models import PriceHistory
 
 PRICE_COLUMNS = ["open_price", "high_price", "low_price", "close_price"]
@@ -63,4 +64,8 @@ def save_price_rows(ticker, frame):
     inserted = count_after - count_before
     skipped = len(frame) - inserted
     ApplicationLogger.info(f"Price rows saved: ticker={ticker}, inserted={inserted}, skipped={skipped}")
+
+    if inserted > 0:
+        clear_summary_cache_for_ticker(ticker)
+
     return inserted, skipped
