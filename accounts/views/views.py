@@ -6,6 +6,8 @@ from django.views.decorators.http import require_POST
 
 from config.application_logger import ApplicationLogger
 from config.responses import get_form_errors
+from core.cache import invalidate_admin_dashboard, invalidate_user_dashboards
+from dashboards.services import get_admin_dashboard, get_analyst_dashboard, get_investor_dashboard
 from ..forms import (
     AdminUserUpdateForm,
     ChangePasswordForm,
@@ -34,6 +36,7 @@ def register_view(request):
 
     if form.is_valid():
         user = form.save()
+        invalidate_admin_dashboard()
         messages.success(request, "Investor account created successfully. Please log in.")
         ApplicationLogger.info(f"Template registration completed: username={user.username}")
         return redirect("accounts:login")
@@ -95,10 +98,21 @@ def logout_view(request):
 @login_required
 def dashboard_view(request):
     ApplicationLogger.info(f"Dashboard requested: username={request.user.username}")
+    role = request.user.role
+
+    if role == User.Role.ADMIN:
+        dashboard, from_cache = get_admin_dashboard()
+    elif role == User.Role.ANALYST:
+        dashboard, from_cache = get_analyst_dashboard(request.user)
+    else:
+        dashboard, from_cache = get_investor_dashboard(request.user)
+
     context = {
-        "is_investor": request.user.role == User.Role.INVESTOR,
-        "is_analyst": request.user.role == User.Role.ANALYST,
-        "is_admin": request.user.role == User.Role.ADMIN,
+        "is_investor": role == User.Role.INVESTOR,
+        "is_analyst": role == User.Role.ANALYST,
+        "is_admin": role == User.Role.ADMIN,
+        "dashboard": dashboard,
+        "from_cache": from_cache,
     }
     return render(request, "accounts/dashboard.html", context)
 
@@ -176,10 +190,12 @@ def user_role_update_view(request, user_id):
         messages.error(request, "You cannot change your own role.")
         return redirect("accounts:user-list")
 
+    old_analyst_id = user.assigned_analyst_id
     form = AdminUserUpdateForm(build_admin_update_data(user, request.POST), instance=user)
 
     if form.is_valid():
         updated_user = form.save()
+        invalidate_user_dashboards([updated_user.id, old_analyst_id, updated_user.assigned_analyst_id])
         messages.success(request, f"{updated_user.username} was updated successfully.")
         ApplicationLogger.info(f"Template admin user update completed: admin={request.user.username}, user={updated_user.username}")
         return redirect("accounts:user-list")

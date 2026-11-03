@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from config.application_logger import ApplicationLogger
 from config.decorators import log_execution_time
-from core.cache import invalidate_portfolio_cache
+from core.cache import invalidate_portfolios_cache
 from market_data.models import PriceHistory
 from market_data.selectors import latest_price
 from portfolios.models import Holding
@@ -149,8 +149,7 @@ def recompute_holdings(holdings, model_types):
     if updated_holdings:
         Holding.objects.bulk_update(updated_holdings, get_update_fields(model_types), batch_size=BULK_UPDATE_BATCH_SIZE)
 
-    for portfolio_id in {holding.portfolio_id for holding in updated_holdings}:
-        invalidate_portfolio_cache(portfolio_id)
+    invalidate_portfolios_cache({holding.portfolio_id for holding in updated_holdings})
 
     model_versions = {model_type: loaded["version"] for model_type, loaded in models.items()}
     ApplicationLogger.info(

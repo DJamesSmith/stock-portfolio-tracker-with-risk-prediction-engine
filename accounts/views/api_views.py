@@ -4,6 +4,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from config.application_logger import ApplicationLogger
 from config.responses import api_response, get_form_errors
+from core.cache import invalidate_admin_dashboard, invalidate_user_dashboards
 from core.pagination import StandardPagination
 from core.throttles import LoginRateThrottle, RegisterRateThrottle
 from ..forms import (
@@ -44,6 +45,7 @@ def register_api(request):
         )
 
     user = form.save()
+    invalidate_admin_dashboard()
     return api_response(
         "Investor account created successfully.",
         data=UserSerializer(user).data,
@@ -222,6 +224,7 @@ def user_update_api(request, user_id):
         ApplicationLogger.warning(f"Admin attempted to change own role: username={request.user.username}")
         return api_response("You cannot change your own role.", status_code=status.HTTP_403_FORBIDDEN)
 
+    old_analyst_id = user.assigned_analyst_id
     form = AdminUserUpdateForm(build_admin_update_data(user, request.data), instance=user)
 
     if not form.is_valid():
@@ -232,4 +235,5 @@ def user_update_api(request, user_id):
         )
 
     updated_user = form.save()
+    invalidate_user_dashboards([updated_user.id, old_analyst_id, updated_user.assigned_analyst_id])
     return api_response("User updated successfully.", data=UserSerializer(updated_user).data)
