@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'core',
     'market_data',
     'portfolios',
+    'analytics',
 ]
 
 MIDDLEWARE = [
@@ -135,6 +136,8 @@ MARKET_SEED_TICKERS = []
 for ticker in os.getenv("MARKET_SEED_TICKERS", "").split(","):
     if ticker.strip():
         MARKET_SEED_TICKERS.append(ticker.strip().upper())
+
+ML_MODELS_DIR = BASE_DIR / "ml_models"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

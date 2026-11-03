@@ -39,6 +39,7 @@ htmlcov/
 # ML artifacts
 *.pkl
 *.joblib
+ml_models/
 
 # OS
 Thumbs.db
