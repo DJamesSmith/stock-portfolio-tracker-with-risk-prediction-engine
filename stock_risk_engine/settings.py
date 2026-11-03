@@ -1,13 +1,19 @@
 import os
 from pathlib import Path
 from celery.schedules import crontab
-
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.getenv("SECRET_KEY")
+def env_required(name):
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise ImproperlyConfigured(f"{name} must be set in the .env file.")
+    return value
+
+SECRET_KEY = env_required("SECRET_KEY")
 DEBUG = True
 ALLOWED_HOSTS = []
 
@@ -96,14 +102,14 @@ MAILERS = {
     'default': { 'BACKEND': 'django.core.mail.backends.console.EmailBackend' },
 }
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-JWT_REFRESH_SECRET_KEY = os.getenv("JWT_REFRESH_SECRET_KEY")
+JWT_SECRET_KEY = env_required("JWT_SECRET_KEY")
+JWT_REFRESH_SECRET_KEY = env_required("JWT_REFRESH_SECRET_KEY")
 
 ACCESS_TOKEN_LIFETIME_MINUTES = int(os.getenv("ACCESS_TOKEN_LIFETIME_MINUTES"))
 REFRESH_TOKEN_LIFETIME_DAYS = int(os.getenv("REFRESH_TOKEN_LIFETIME_DAYS"))
 
-REDIS_URL = os.getenv("REDIS_URL")
-TOKEN_BLACKLIST_REDIS_URL = os.getenv("TOKEN_BLACKLIST_REDIS_URL")
+REDIS_URL = env_required("REDIS_URL")
+TOKEN_BLACKLIST_REDIS_URL = env_required("TOKEN_BLACKLIST_REDIS_URL")
 
 CACHES = {
     "default": {
