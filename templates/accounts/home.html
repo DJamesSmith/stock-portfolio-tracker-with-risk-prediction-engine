@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %} Home {% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8 text-center">
+        <h1 class="display-5 fw-bold mb-3">Stock Portfolio Risk &amp; Forecasting</h1>
+        <p class="lead text-muted mb-4">
+            Track your stock portfolios, see their current value, and get a machine-learning risk label
+            (Low, Medium or High) and a next-day Up/Down forecast for every holding.
+        </p>
+
+        {% if user.is_authenticated %}
+            <p class="mb-4">Signed in as <strong>{{ user.username }}</strong> ({{ user.get_role_display }}).</p>
+            <a class="btn btn-primary btn-lg me-2" href="{% url 'accounts:dashboard' %}">Go to dashboard</a>
+            <a class="btn btn-outline-secondary btn-lg" href="{% url 'dashboards:portfolio-list' %}">View portfolios</a>
+        {% else %}
+            <a class="btn btn-primary btn-lg me-2" href="{% url 'accounts:register' %}">Create an account</a>
+            <a class="btn btn-outline-secondary btn-lg" href="{% url 'accounts:login' %}">Log in</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-4 mt-5">
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Investors</h5>
+                <p class="card-text text-muted">Create portfolios, add holdings and follow their value, risk and forecast.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Analysts</h5>
+                <p class="card-text text-muted">View the portfolios of assigned investors in read-only mode and refresh predictions.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Admins</h5>
+                <p class="card-text text-muted">Manage user roles, assign analysts and see system-wide statistics.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

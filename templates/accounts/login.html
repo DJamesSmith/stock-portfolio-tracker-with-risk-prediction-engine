@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %} Login {% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-4">Log in</h1>
+                {% include "accounts/_errors.html" %}
+
+                <form method="POST" action="{% url 'accounts:login' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="username_or_email" class="form-label">Username or email</label>
+                        <input type="text" class="form-control" id="username_or_email" name="username_or_email"
+                               value="{{ request.POST.username_or_email }}" required autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Log in</button>
+                </form>
+
+                <p class="text-muted text-center mt-3 mb-0">
+                    No account yet? <a href="{% url 'accounts:register' %}">Register</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
