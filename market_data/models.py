@@ -9,6 +9,7 @@ class PriceHistory(models.Model):
     low_price = models.DecimalField(max_digits=12, decimal_places=4)
     close_price = models.DecimalField(max_digits=12, decimal_places=4)
     volume = models.BigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
     class Meta:
         db_table = "price_history"

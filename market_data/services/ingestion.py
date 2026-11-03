@@ -1,8 +1,8 @@
 from decimal import Decimal
-
 import pandas as pd
 
 from config.application_logger import ApplicationLogger
+from core.cache import invalidate_admin_dashboard
 from portfolios.cache import clear_summary_cache_for_ticker
 from ..models import PriceHistory
 
@@ -67,5 +67,6 @@ def save_price_rows(ticker, frame):
 
     if inserted > 0:
         clear_summary_cache_for_ticker(ticker)
+        invalidate_admin_dashboard()
 
     return inserted, skipped
