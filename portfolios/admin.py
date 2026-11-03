@@ -11,7 +11,8 @@ class HoldingInline(admin.TabularInline):
         "predicted_direction",
         "prediction_confidence",
         "last_predicted_at",
-        "model_version",
+        "risk_model_version",
+        "forecast_model_version",
     ]
 
 
@@ -35,5 +36,6 @@ class HoldingAdmin(admin.ModelAdmin):
         "predicted_direction",
         "prediction_confidence",
         "last_predicted_at",
-        "model_version",
+        "risk_model_version",
+        "forecast_model_version",
     ]

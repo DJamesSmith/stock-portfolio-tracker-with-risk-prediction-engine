@@ -54,7 +54,8 @@ class Holding(models.Model):
     predicted_direction = models.CharField(max_length=10, choices=Direction.choices, null=True, blank=True)
     prediction_confidence = models.FloatField(null=True, blank=True)
     last_predicted_at = models.DateTimeField(null=True, blank=True)
-    model_version = models.CharField(max_length=50, blank=True, default="")
+    risk_model_version = models.CharField(max_length=50, blank=True, default="")
+    forecast_model_version = models.CharField(max_length=50, blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

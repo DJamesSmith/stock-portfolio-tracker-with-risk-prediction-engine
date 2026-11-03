@@ -27,7 +27,8 @@ class HoldingSerializer(serializers.ModelSerializer):
             "predicted_direction",
             "prediction_confidence",
             "last_predicted_at",
-            "model_version",
+            "risk_model_version",
+            "forecast_model_version",
             "created_at",
             "updated_at",
         ]

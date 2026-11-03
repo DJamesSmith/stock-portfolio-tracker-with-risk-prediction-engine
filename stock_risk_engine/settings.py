@@ -129,6 +129,18 @@ CELERY_BEAT_SCHEDULE = {
         "task": "market_data.tasks.fetch_daily_prices",
         "schedule": crontab(hour=22, minute=0, day_of_week="mon-fri"),
     },
+    "recompute-holding-risk": {
+        "task": "analytics.tasks.recompute_holding_risk",
+        "schedule": crontab(hour=23, minute=0, day_of_week="mon-fri"),
+    },
+    "recompute-holding-forecast": {
+        "task": "analytics.tasks.recompute_holding_forecast",
+        "schedule": crontab(hour=23, minute=15, day_of_week="mon-fri"),
+    },
+    "retrain-models": {
+        "task": "analytics.tasks.retrain_models",
+        "schedule": crontab(hour=2, minute=0, day_of_week="sun"),
+    },
 }
 
 # MARKET_SEED_TICKERS = [ticker.strip().upper() for ticker in os.getenv("MARKET_SEED_TICKERS", "").split(",") if ticker.strip()]
