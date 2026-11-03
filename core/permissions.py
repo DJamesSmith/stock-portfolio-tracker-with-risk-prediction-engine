@@ -26,6 +26,19 @@ class IsAdminRole(BasePermission):
         return allowed
 
 
+class IsAnalystOrAdminRole(BasePermission):
+    message = "Only analysts and administrators can perform this action."
+
+    def has_permission(self, request, view):
+        allowed_roles = [User.Role.ANALYST, User.Role.ADMIN]
+        allowed = request.user.is_authenticated and request.user.role in allowed_roles
+
+        if not allowed:
+            ApplicationLogger.warning(f"Analyst/Admin permission denied: path={request.path}")
+
+        return allowed
+
+
 class IsOwner(BasePermission):
     message = "You do not own this resource."
 
