@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from accounts.models import User
 from config.application_logger import ApplicationLogger
 from config.responses import api_response, get_form_errors
-from core.cache import invalidate_portfolio_cache
+from core.cache import invalidate_portfolio_cache, invalidate_user_dashboards
 from core.pagination import StandardPagination
 from core.permissions import IsOwner
 from .forms import (
@@ -137,8 +137,10 @@ def portfolio_detail_api(request, portfolio_id):
         return no_write_access(request)
 
     if request.method == "DELETE":
+        owner_ids = [portfolio.user_id, portfolio.user.assigned_analyst_id]
         portfolio.delete()
         invalidate_portfolio_cache(portfolio_id)
+        invalidate_user_dashboards(owner_ids)
         ApplicationLogger.info(f"Portfolio deleted: id={portfolio_id}, deleted_by={request.user.username}")
         return api_response("Portfolio deleted successfully.")
 
