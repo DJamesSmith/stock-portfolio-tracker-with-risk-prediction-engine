@@ -1,5 +1,7 @@
 import os
 from pathlib import Path
+from celery.schedules import crontab
+
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -22,6 +24,7 @@ INSTALLED_APPS = [
 
     'accounts',
     'core',
+    'market_data',
 ]
 
 MIDDLEWARE = [
@@ -120,7 +123,17 @@ CELERY_BEAT_SCHEDULE = {
         "task": "core.tasks.ping",
         "schedule": 15 * 60,
     },
+    "fetch-daily-prices": {
+        "task": "market_data.tasks.fetch_daily_prices",
+        "schedule": crontab(hour=22, minute=0, day_of_week="mon-fri"),
+    },
 }
+
+# MARKET_SEED_TICKERS = [ticker.strip().upper() for ticker in os.getenv("MARKET_SEED_TICKERS", "").split(",") if ticker.strip()]
+MARKET_SEED_TICKERS = []
+for ticker in os.getenv("MARKET_SEED_TICKERS", "").split(","):
+    if ticker.strip():
+        MARKET_SEED_TICKERS.append(ticker.strip().upper())
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
