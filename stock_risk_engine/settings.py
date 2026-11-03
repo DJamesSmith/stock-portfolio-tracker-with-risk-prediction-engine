@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     'accounts',
     'core',
     'market_data',
+    'portfolios',
 ]
 
 MIDDLEWARE = [
