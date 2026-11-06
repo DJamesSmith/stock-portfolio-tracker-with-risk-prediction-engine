@@ -98,10 +98,6 @@ STATICFILES_DIRS = [ BASE_DIR / "script" ]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-MAILERS = {
-    'default': { 'BACKEND': 'django.core.mail.backends.console.EmailBackend' },
-}
-
 JWT_SECRET_KEY = env_required("JWT_SECRET_KEY")
 JWT_REFRESH_SECRET_KEY = env_required("JWT_REFRESH_SECRET_KEY")
 
