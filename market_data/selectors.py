@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.db.models import Count, Max, Min
 
 from .models import PriceHistory
 
@@ -29,3 +30,12 @@ def tracked_tickers():
     stored_tickers = set(PriceHistory.objects.values_list("ticker", flat=True).distinct())
     seed_tickers = set(settings.MARKET_SEED_TICKERS)
     return sorted(stored_tickers | seed_tickers)
+
+def price_data_summary():
+    summary = PriceHistory.objects.aggregate(
+        rows=Count("id"),
+        tickers=Count("ticker", distinct=True),
+        first_date=Min("date"),
+        last_date=Max("date"),
+    )
+    return summary

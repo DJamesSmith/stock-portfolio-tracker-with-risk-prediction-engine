@@ -2,8 +2,8 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
-from config.application_logger import ApplicationLogger
-from config.responses import api_response
+from core.application_logger import ApplicationLogger
+from core.responses import api_response
 from core.permissions import IsAnalystOrAdminRole
 from portfolios.selectors import find_holding, find_portfolio
 from portfolios.services import get_price_map

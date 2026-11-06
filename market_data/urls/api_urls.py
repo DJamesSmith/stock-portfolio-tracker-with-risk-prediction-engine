@@ -1,8 +1,8 @@
 from django.urls import path
 
-from . import views
+from ..views import api_views as views
 
-app_name = "market_data"
+app_name = "api_market_data"
 
 urlpatterns = [
     path("prices/<str:ticker>/", views.latest_price_api, name="latest-price"),

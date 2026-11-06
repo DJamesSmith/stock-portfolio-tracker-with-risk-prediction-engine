@@ -5,8 +5,8 @@ from django.shortcuts import render
 
 from analytics.serializers import RiskSummarySerializer
 from analytics.services.risk_summary import get_risk_summary
-from config.application_logger import ApplicationLogger
-from config.responses import get_form_errors
+from core.application_logger import ApplicationLogger
+from core.responses import get_form_errors
 from market_data.forms import PriceHistoryFilterForm
 from portfolios.selectors import find_holding, find_portfolio, visible_portfolios, with_holdings
 from portfolios.serializers import HoldingSerializer, PortfolioListSerializer, PortfolioSummarySerializer

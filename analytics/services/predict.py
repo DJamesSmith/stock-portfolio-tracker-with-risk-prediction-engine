@@ -3,14 +3,14 @@ from datetime import timedelta
 import pandas as pd
 from django.utils import timezone
 
-from config.application_logger import ApplicationLogger
-from config.decorators import log_execution_time
+from core.application_logger import ApplicationLogger
+from core.decorators import log_execution_time
 from core.cache import invalidate_portfolios_cache
 from market_data.models import PriceHistory
 from market_data.selectors import latest_price
 from portfolios.models import Holding
-from ..feature_engineering import build_ticker_features
-from ..registry import load_model
+from ml_training.feature_engineering import build_ticker_features
+from ml_training.registry import load_model
 
 PRICE_LOOKBACK_DAYS = 400
 BULK_UPDATE_BATCH_SIZE = 500

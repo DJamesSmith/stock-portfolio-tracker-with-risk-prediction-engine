@@ -1,7 +1,7 @@
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from accounts.models import User
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 
 
 def get_owner(obj):

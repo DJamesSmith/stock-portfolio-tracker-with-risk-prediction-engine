@@ -3,8 +3,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
 from accounts.permissions import IsAdmin, IsAnalyst, IsInvestor
-from config.application_logger import ApplicationLogger
-from config.responses import api_response, get_form_errors
+from core.application_logger import ApplicationLogger
+from core.responses import api_response, get_form_errors
 from market_data.forms import PriceHistoryFilterForm
 from portfolios.selectors import find_holding
 from ..serializers import TickerTrendSerializer

@@ -1,7 +1,7 @@
 from decimal import Decimal
 import pandas as pd
 
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 from core.cache import invalidate_admin_dashboard
 from portfolios.cache import clear_summary_cache_for_ticker
 from ..models import PriceHistory

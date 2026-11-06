@@ -2,7 +2,7 @@ from django.conf import settings
 from django.core.cache import cache
 
 from accounts.models import User
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 
 DASHBOARD_CACHE_SECONDS = 300
 

@@ -3,8 +3,10 @@ from datetime import timedelta
 from celery import shared_task
 from django.utils import timezone
 
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
+from .models import DatasetUpload
 from .selectors import latest_price, tracked_tickers
+from .services.dataset_upload import import_dataset_upload
 from .services.ingestion import save_price_rows
 from .services.provider import fetch_prices
 
@@ -76,3 +78,21 @@ def refresh_single_ticker(self, ticker):
 
     ApplicationLogger.info(f"Ticker refreshed: ticker={ticker}, rows_inserted={inserted}")
     return {"ticker": ticker, "rows_inserted": inserted}
+
+@shared_task(name="market_data.tasks.import_dataset_upload")
+def import_dataset_upload_task(upload_id):
+    upload = DatasetUpload.objects.filter(id=upload_id).first()
+
+    if upload is None:
+        ApplicationLogger.warning(f"Dataset import skipped, upload not found: upload_id={upload_id}")
+        return {"upload_id": upload_id, "found": False}
+
+    upload = import_dataset_upload(upload)
+    return {
+        "upload_id": upload.id,
+        "found": True,
+        "status": upload.status,
+        "tickers_loaded": upload.tickers_loaded,
+        "rows_inserted": upload.rows_inserted,
+        "rows_skipped": upload.rows_skipped,
+    }

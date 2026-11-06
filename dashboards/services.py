@@ -2,8 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 from django.utils import timezone
 
-from analytics.registry import get_latest_version, load_metadata
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 from core.cache import (
     admin_dashboard_key,
     analyst_dashboard_key,
@@ -11,6 +10,7 @@ from core.cache import (
     investor_dashboard_key,
     save_dashboard_to_cache)
 from market_data.selectors import latest_price, price_history, tracked_tickers
+from ml_training.registry import get_latest_version, load_metadata
 from portfolios.models import Holding, Portfolio
 from portfolios.selectors import visible_holdings, visible_portfolios, with_holdings
 from portfolios.services import get_current_price, get_holding_value, get_percent, get_price_map

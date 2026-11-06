@@ -2,15 +2,15 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 
-from config.application_logger import ApplicationLogger
-from config.responses import api_response, get_form_errors
+from core.application_logger import ApplicationLogger
+from core.responses import api_response, get_form_errors
 from core.pagination import StandardPagination
 from core.permissions import IsAnalystOrAdminRole
 from core.throttles import MarketRefreshThrottle
-from .forms import PriceHistoryFilterForm, TickerForm
-from .selectors import latest_price, price_history
-from .serializers import PriceHistorySerializer
-from .tasks import refresh_single_ticker
+from ..forms import PriceHistoryFilterForm, TickerForm
+from ..selectors import latest_price, price_history
+from ..serializers import PriceHistorySerializer
+from ..tasks import refresh_single_ticker
 
 
 def invalid_ticker_response(form):

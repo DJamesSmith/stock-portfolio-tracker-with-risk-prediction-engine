@@ -1,6 +1,6 @@
 from django.utils import timezone
 
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 from core.cache import get_from_cache, portfolio_risk_summary_key, save_to_cache
 from portfolios.services import get_price_map, get_total_value
 

@@ -1,6 +1,6 @@
 from celery import shared_task
 
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 
 
 @shared_task(name="core.tasks.ping")
