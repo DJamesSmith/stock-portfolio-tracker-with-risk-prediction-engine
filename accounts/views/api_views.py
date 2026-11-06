@@ -2,8 +2,8 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
-from config.application_logger import ApplicationLogger
-from config.responses import api_response, get_form_errors
+from core.application_logger import ApplicationLogger
+from core.responses import api_response, get_form_errors
 from core.cache import invalidate_admin_dashboard, invalidate_user_dashboards
 from core.pagination import StandardPagination
 from core.throttles import LoginRateThrottle, RegisterRateThrottle

@@ -1,5 +1,5 @@
 from django.contrib.auth.base_user import BaseUserManager
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 
 
 class UserManager(BaseUserManager):

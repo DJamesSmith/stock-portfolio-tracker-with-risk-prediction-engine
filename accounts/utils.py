@@ -5,7 +5,7 @@ import jwt
 from django.conf import settings
 from django.core.cache import caches
 
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 from core.cache import blacklisted_refresh_token_key
 from .models import User
 

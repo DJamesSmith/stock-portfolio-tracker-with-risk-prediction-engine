@@ -1,5 +1,5 @@
 from rest_framework import authentication, exceptions
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 from .utils import decode_access_token, get_user_from_token_payload
 
 

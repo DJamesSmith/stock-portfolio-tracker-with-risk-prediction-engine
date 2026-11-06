@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 from .models import User
 
 

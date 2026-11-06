@@ -5,8 +5,8 @@ from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from config.application_logger import ApplicationLogger
-from config.responses import get_form_errors
+from core.application_logger import ApplicationLogger
+from core.responses import get_form_errors
 from core.cache import invalidate_admin_dashboard, invalidate_user_dashboards
 from dashboards.services import get_admin_dashboard, get_analyst_dashboard, get_investor_dashboard
 from ..forms import (
