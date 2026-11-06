@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'portfolios',
     'analytics',
     'dashboards',
+    'ml_training',
 ]
 
 MIDDLEWARE = [
@@ -147,7 +148,7 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=23, minute=15, day_of_week="mon-fri"),
     },
     "retrain-models": {
-        "task": "analytics.tasks.retrain_models",
+        "task": "ml_training.tasks.retrain_models",
         "schedule": crontab(hour=2, minute=0, day_of_week="sun"),
     },
 }
@@ -159,6 +160,9 @@ for ticker in os.getenv("MARKET_SEED_TICKERS", "").split(","):
         MARKET_SEED_TICKERS.append(ticker.strip().upper())
 
 ML_MODELS_DIR = BASE_DIR / "ml_models"
+
+MEDIA_ROOT = BASE_DIR / "media"
+DATA_UPLOAD_MAX_NUMBER_FILES = 1000
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

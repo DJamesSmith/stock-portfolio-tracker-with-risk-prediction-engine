@@ -3,8 +3,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
 from accounts.models import User
-from config.application_logger import ApplicationLogger
-from config.responses import api_response, get_form_errors
+from core.application_logger import ApplicationLogger
+from core.responses import api_response, get_form_errors
 from core.cache import invalidate_portfolio_cache, invalidate_user_dashboards
 from core.pagination import StandardPagination
 from core.permissions import IsOwner

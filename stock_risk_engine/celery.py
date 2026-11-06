@@ -2,7 +2,7 @@ import os
 
 from celery import Celery
 from celery.signals import task_failure
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "stock_risk_engine.settings")

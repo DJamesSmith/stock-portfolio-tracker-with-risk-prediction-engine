@@ -19,7 +19,7 @@
                 </table>
                 <p class="small text-muted mb-0">{{ model.comparison }}</p>
             {% else %}
-                <p class="text-muted mb-0">No trained model found. Run: python manage.py train_models</p>
+                <p class="text-muted mb-0">No trained model found. <a href="{% url 'ml_training:training' %}">Train one on the ML Training page</a>.</p>
             {% endif %}
         </div>
     </div>

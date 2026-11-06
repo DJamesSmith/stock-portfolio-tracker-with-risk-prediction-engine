@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% load dashboard_tags ml_tags %}
+{% block title %} Training run {{ run.id }} {% endblock %}
+
+{% block head %}
+    {% if run.is_active %}<meta http-equiv="refresh" content="3">{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+    <div>
+        <a href="{% url 'ml_training:training' %}" class="small">&larr; ML Training</a>
+        <h1 class="mb-1">Training run #{{ run.id }}</h1>
+        <p class="text-muted mb-0">{{ run.get_model_choice_display }} &middot; tickers: {{ run.tickers|default:"all" }}</p>
+    </div>
+    <div class="fs-5">{% include "core/_status_badge.html" with status=run.status label=run.get_status_display %}</div>
+</div>
+
+{% if run.status == "pending" %}
+    <div class="alert alert-secondary d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span>Waiting for a Celery worker. If this does not change, start one with <code>celery -A stock_risk_engine worker -l info</code>.</span>
+        <form method="POST" action="{% url 'ml_training:run-cancel' run.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-danger">Cancel run</button>
+        </form>
+    </div>
+{% elif run.status == "running" %}
+    <div class="alert alert-primary">
+        <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+        {{ run.current_step|default:"Training" }}... This can take several minutes on the full dataset. The page refreshes automatically.
+    </div>
+{% elif run.status == "completed" %}
+    <div class="alert alert-success">Training finished. The new models are now used for predictions.</div>
+{% endif %}
+
+{% if run.error %}
+    <div class="alert alert-danger">{{ run.error }}</div>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row small">
+            <div class="col-md-3"><span class="text-muted">Started by</span><div>{{ run.triggered_by.username|default:"Weekly schedule" }}</div></div>
+            <div class="col-md-3"><span class="text-muted">Created</span><div>{{ run.created_at|date:"d M Y, H:i" }} UTC</div></div>
+            <div class="col-md-3"><span class="text-muted">Finished</span><div>{{ run.finished_at|date:"d M Y, H:i"|default:"-" }}</div></div>
+            <div class="col-md-3"><span class="text-muted">Duration</span><div>{{ run.duration|duration }}</div></div>
+        </div>
+        <p class="small mb-0 mt-3"><span class="text-muted">Update predictions afterwards:</span> {{ run.update_predictions|yesno:"Yes,No" }}</p>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    {% if run.trains_risk %}
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <h5>Risk model</h5>
+                    {% if run.result.risk %}
+                        {% with risk=run.result.risk %}
+                            <p class="mb-3"><a href="{% url 'ml_training:model-detail' 'risk' risk.version %}">{{ risk.version }}</a></p>
+                            <table class="table table-sm">
+                                <thead><tr><th>Test set</th><th class="text-end">Accuracy</th><th class="text-end">Macro F1</th></tr></thead>
+                                <tbody>
+                                    <tr class="fw-semibold"><td>Random Forest</td><td class="text-end">{{ risk.random_forest.accuracy|as_percent }}</td><td class="text-end">{{ risk.random_forest.macro_f1|metric }}</td></tr>
+                                    <tr><td>Logistic Regression</td><td class="text-end">{{ risk.logistic_regression.accuracy|as_percent }}</td><td class="text-end">{{ risk.logistic_regression.macro_f1|metric }}</td></tr>
+                                </tbody>
+                            </table>
+                            <div class="alert alert-{% if risk.beats_baseline %}success{% else %}warning{% endif %} small mb-0">{{ risk.note }}</div>
+                        {% endwith %}
+                    {% elif run.is_active %}
+                        <p class="text-muted mb-0">Waiting for results...</p>
+                    {% else %}
+                        <p class="text-muted mb-0">Not trained.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if run.trains_forecast %}
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <h5>Forecast model</h5>
+                    {% if run.result.forecast %}
+                        {% with forecast=run.result.forecast %}
+                            <p class="mb-3"><a href="{% url 'ml_training:model-detail' 'forecast' forecast.version %}">{{ forecast.version }}</a></p>
+                            <table class="table table-sm">
+                                <thead><tr><th>Test set</th><th class="text-end">Accuracy</th><th class="text-end">F1</th><th class="text-end">ROC-AUC</th></tr></thead>
+                                <tbody>
+                                    <tr class="fw-semibold"><td>Gradient Boosting</td><td class="text-end">{{ forecast.gradient_boosting.accuracy|as_percent }}</td><td class="text-end">{{ forecast.gradient_boosting.f1|metric }}</td><td class="text-end">{{ forecast.gradient_boosting.roc_auc|metric }}</td></tr>
+                                    <tr><td>Always up</td><td class="text-end">{{ forecast.always_up.accuracy|as_percent }}</td><td class="text-end">{{ forecast.always_up.f1|metric }}</td><td class="text-end">{{ forecast.always_up.roc_auc|metric }}</td></tr>
+                                    <tr><td>Same as today</td><td class="text-end">{{ forecast.previous_day.accuracy|as_percent }}</td><td class="text-end">{{ forecast.previous_day.f1|metric }}</td><td class="text-end">{{ forecast.previous_day.roc_auc|metric }}</td></tr>
+                                </tbody>
+                            </table>
+                            <div class="alert alert-{% if forecast.beats_baselines %}success{% else %}warning{% endif %} small mb-0">{{ forecast.note }}</div>
+                        {% endwith %}
+                    {% elif run.is_active %}
+                        <p class="text-muted mb-0">Waiting for results...</p>
+                    {% else %}
+                        <p class="text-muted mb-0">Not trained.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+{% if run.result.predictions %}
+    <div class="row g-3">
+        {% include "dashboards/_stat_card.html" with title="Holdings checked" value=run.result.predictions.holdings_checked %}
+        {% include "dashboards/_stat_card.html" with title="Predictions updated" value=run.result.predictions.holdings_updated css_class="text-success" %}
+        {% include "dashboards/_stat_card.html" with title="Skipped (not enough price history)" value=run.result.predictions.holdings_skipped %}
+    </div>
+{% endif %}
+{% endblock %}

@@ -6,6 +6,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{% block title %}Stock Risk Engine{% endblock %}</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+        {% block head %}{% endblock %}
     </head>
 
     <body class="bg-light">
@@ -21,6 +22,8 @@
 
                         {% if user.role == "admin" %}
                             <a class="btn btn-outline-light btn-sm" href="{% url 'accounts:user-list' %}"> Users </a>
+                            <a class="btn btn-outline-light btn-sm" href="{% url 'market_data:dataset-list' %}"> Datasets </a>
+                            <a class="btn btn-outline-light btn-sm" href="{% url 'ml_training:training' %}"> ML Training </a>
                         {% endif %}
 
                         <form method="POST" action="{% url 'accounts:logout' %}" class="d-inline">

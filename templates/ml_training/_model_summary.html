@@ -1,0 +1,25 @@
+{% load dashboard_tags ml_tags %}
+<div class="col-md-6">
+    <div class="card shadow-sm h-100">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <h5>{{ title }}</h5>
+                {% if model %}<span class="badge text-bg-success">In use</span>{% endif %}
+            </div>
+            {% if model %}
+                <p class="mb-1"><a href="{% url 'ml_training:model-detail' model.model_type model.version %}">{{ model.version }}</a></p>
+                <p class="small text-muted mb-3">{{ model.algorithm }} &middot; trained {{ model.trained_at|to_datetime|date:"d M Y, H:i" }} UTC &middot; {{ model.tickers_count }} tickers</p>
+                <div class="d-flex gap-4">
+                    <div><div class="text-muted small">Test accuracy</div><div class="fs-5 fw-semibold">{{ model.test_accuracy|as_percent }}</div></div>
+                    <div><div class="text-muted small">Test {{ model.second_metric_name }}</div><div class="fs-5 fw-semibold">{{ model.second_metric|metric }}</div></div>
+                    <div>
+                        <div class="text-muted small">Beats baseline</div>
+                        <div class="fs-5">{% if model.beats_baseline %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-warning">No</span>{% endif %}</div>
+                    </div>
+                </div>
+            {% else %}
+                <p class="text-muted mb-0">No trained model yet. Use the form above to train one.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>

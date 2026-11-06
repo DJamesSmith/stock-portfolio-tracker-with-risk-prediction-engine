@@ -38,3 +38,39 @@ document.addEventListener("DOMContentLoaded", function () {
         checkForChanges()
     })
 })
+
+document.addEventListener("DOMContentLoaded", function () {
+    const fileInputs = document.querySelectorAll(".file-count-input")
+
+    fileInputs.forEach(function (input) {
+        const countText = document.getElementById(input.dataset.countTarget)
+
+        input.addEventListener("change", function () {
+            let usable = 0
+
+            Array.from(input.files).forEach(function (file) {
+                const name = file.name.toLowerCase()
+                if (!name.startsWith(".") && (name.endsWith(".csv") || name.endsWith(".zip"))) {
+                    usable += 1
+                }
+            })
+
+            countText.textContent = usable + " usable file(s) selected out of " + input.files.length + "."
+        })
+    })
+
+    const busyForms = document.querySelectorAll(".busy-form")
+
+    busyForms.forEach(function (form) {
+        form.addEventListener("submit", function () {
+            const button = form.querySelector(".busy-button")
+            button.disabled = true
+            form.querySelector(".busy-spinner").classList.remove("d-none")
+
+            const text = form.querySelector(".busy-text")
+            if (text) {
+                text.classList.remove("d-none")
+            }
+        })
+    })
+})

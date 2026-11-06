@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% load ml_tags %}
+{% block title %} ML Training {% endblock %}
+
+{% block head %}
+    {% if has_active_run %}<meta http-equiv="refresh" content="5">{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+    <div>
+        <h1>ML Training</h1>
+        <p class="text-muted mb-0">Train the risk and forecast models from the stored price history and review every saved version.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'market_data:dataset-list' %}" class="btn btn-outline-dark">Datasets</a>
+        <a href="{% url 'ml_training:model-list' %}" class="btn btn-dark">Model versions</a>
+    </div>
+</div>
+
+{% if has_active_run %}
+    <div class="alert alert-primary">A training run is in progress. New runs can be started when it finishes. This page refreshes automatically.</div>
+{% endif %}
+
+{% include "accounts/_errors.html" %}
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5>Train new models</h5>
+                <form method="POST" class="busy-form">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Which models</label>
+                        {% for value, label in model_choices %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="model_choice" id="choice-{{ value }}" value="{{ value }}" {% if value == form_data.model_choice %}checked{% endif %}>
+                                <label class="form-check-label" for="choice-{{ value }}">
+                                    {{ label }}
+                                    <span class="small text-muted">
+                                        {% if value == "all" %}- Random Forest, Logistic Regression baseline and Gradient Boosting
+                                        {% elif value == "risk" %}- Random Forest compared with Logistic Regression
+                                        {% else %}- Gradient Boosting compared with simple baselines{% endif %}
+                                    </span>
+                                </label>
+                            </div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="training-tickers">Only these tickers (optional)</label>
+                        <input type="text" name="tickers" id="training-tickers" class="form-control" placeholder="AAPL, MSFT, GOOG" value="{{ form_data.tickers }}">
+                        <div class="form-text">Leave empty to train on every stored ticker.</div>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="update_predictions" id="update-predictions" {% if form_data.update_predictions %}checked{% endif %}>
+                        <label class="form-check-label" for="update-predictions">Update every holding's prediction with the new models when training finishes</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary busy-button" {% if has_active_run or not readiness.ready %}disabled{% endif %}>
+                        <span class="spinner-border spinner-border-sm me-1 d-none busy-spinner" aria-hidden="true"></span>
+                        Start training
+                    </button>
+                    {% if not readiness.ready %}<span class="small text-danger ms-2">Upload price data covering all three periods first.</span>{% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5>Training data</h5>
+                <p class="small text-muted mb-2">
+                    {{ summary.rows }} price rows for {{ summary.tickers }} ticker{{ summary.tickers|pluralize }}
+                    {% if summary.first_date %}({{ summary.first_date|date:"d M Y" }} to {{ summary.last_date|date:"d M Y" }}){% endif %}.
+                    Models are split by date so they are always tested on data they have never seen.
+                </p>
+                <ul class="list-group list-group-flush mb-3">
+                    {% for check in readiness.checks %}
+                        <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                            <span><strong>{{ check.name }}</strong><br><span class="small text-muted">{{ check.description }}</span></span>
+                            {% if check.ok %}<span class="badge text-bg-success">Ready</span>{% else %}<span class="badge text-bg-danger">Missing</span>{% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+                <a href="{% url 'market_data:dataset-list' %}" class="btn btn-sm btn-outline-dark">Upload more data</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h4 class="mb-3">Models in use</h4>
+<div class="row g-4 mb-4">
+    {% include "ml_training/_model_summary.html" with title="Risk model" model=models.risk %}
+    {% include "ml_training/_model_summary.html" with title="Forecast model" model=models.forecast %}
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5>What gets trained</h5>
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead><tr><th>Algorithm</th><th>Role</th><th>Predicts</th></tr></thead>
+                <tbody>
+                    <tr><td><code>RandomForestClassifier</code></td><td>Risk model</td><td>Risk label (low, medium, high) from volatility over the next 30 trading days</td></tr>
+                    <tr><td><code>LogisticRegression</code></td><td>Risk baseline</td><td>Same label; the Random Forest should beat it on macro F1</td></tr>
+                    <tr><td><code>HistGradientBoostingClassifier</code></td><td>Forecast model</td><td>Next trading day direction (up or down), compared with "always up" and "same as today"</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="small text-muted mt-2 mb-0">The code for all three lives in <code>ml_training/algorithms.py</code>. Training also runs automatically every Sunday at 02:00 UTC.</p>
+    </div>
+</div>
+
+<h4 class="mb-3">Training history</h4>
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th>Started by</th>
+                        <th>Models</th>
+                        <th>Tickers</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Duration</th>
+                        <th>New versions</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for run in runs %}
+                        <tr>
+                            <td>{{ run.id }}</td>
+                            <td>{% if run.triggered_by %}{{ run.triggered_by.username }}{% else %}<span class="text-muted">Schedule</span>{% endif %}</td>
+                            <td>{{ run.get_model_choice_display }}</td>
+                            <td>{{ run.tickers|default:"All" }}</td>
+                            <td>{% include "core/_status_badge.html" with status=run.status label=run.get_status_display %}</td>
+                            <td>{{ run.created_at|date:"d M Y, H:i" }}</td>
+                            <td>{{ run.duration|duration }}</td>
+                            <td class="small">
+                                {% if run.risk_version %}<div>{{ run.risk_version }}</div>{% endif %}
+                                {% if run.forecast_version %}<div>{{ run.forecast_version }}</div>{% endif %}
+                                {% if not run.risk_version and not run.forecast_version %}-{% endif %}
+                            </td>
+                            <td><a href="{% url 'ml_training:run-detail' run.id %}" class="btn btn-sm btn-outline-primary">View</a></td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="9" class="text-muted p-4">No training runs yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if runs.has_other_pages %}
+    <nav class="mt-3">
+        <ul class="pagination">
+            {% if runs.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page={{ runs.previous_page_number }}">Previous</a></li>
+            {% endif %}
+            <li class="page-item disabled"><span class="page-link">Page {{ runs.number }} of {{ runs.paginator.num_pages }}</span></li>
+            {% if runs.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ runs.next_page_number }}">Next</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+{% endif %}
+{% endblock %}

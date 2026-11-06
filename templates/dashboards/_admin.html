@@ -25,7 +25,8 @@
             <div class="card-body">
                 <h5>Market data</h5>
                 <p class="mb-1">Last ingestion: <strong>{% if dashboard.market_data.last_ingested_at %}{{ dashboard.market_data.last_ingested_at|to_datetime|date:"d M Y, H:i" }} UTC{% else %}Not recorded yet{% endif %}</strong></p>
-                <p class="mb-0">Latest trading date stored: <strong>{{ dashboard.market_data.latest_price_date|default:"No data" }}</strong></p>
+                <p class="mb-3">Latest trading date stored: <strong>{{ dashboard.market_data.latest_price_date|default:"No data" }}</strong></p>
+                <a href="{% url 'market_data:dataset-list' %}" class="btn btn-sm btn-dark">Upload datasets</a>
             </div>
         </div>
     </div>
@@ -36,6 +37,11 @@
         <h5>System-wide risk</h5>
         {% include "dashboards/_risk_counts.html" with counts=dashboard.risk_distribution %}
     </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Models</h4>
+    <a href="{% url 'ml_training:training' %}" class="btn btn-sm btn-dark">Train models</a>
 </div>
 
 <div class="row g-4">

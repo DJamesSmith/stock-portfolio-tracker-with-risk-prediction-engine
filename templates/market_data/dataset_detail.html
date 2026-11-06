@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %} Upload {{ upload.id }} {% endblock %}
+
+{% block head %}
+    {% if upload.is_active %}<meta http-equiv="refresh" content="3">{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+    <div>
+        <a href="{% url 'market_data:dataset-list' %}" class="small">&larr; Datasets</a>
+        <h1 class="mb-1">Upload #{{ upload.id }}</h1>
+        <p class="text-muted mb-0">{{ upload.name }}</p>
+    </div>
+    <div class="fs-5">{% include "core/_status_badge.html" with status=upload.status label=upload.get_status_display %}</div>
+</div>
+
+{% if upload.status == "pending" %}
+    <div class="alert alert-secondary">The files are stored and waiting for a Celery worker. If this does not change, start one with <code>celery -A stock_risk_engine worker -l info</code>.</div>
+{% elif upload.status == "processing" %}
+    <div class="alert alert-primary">Importing prices. This page refreshes automatically.</div>
+{% elif upload.status == "completed" %}
+    <div class="alert alert-success d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span>Import finished. The new prices are ready for training.</span>
+        <a href="{% url 'ml_training:training' %}" class="btn btn-sm btn-success">Train models</a>
+    </div>
+{% endif %}
+
+{% if upload.error %}
+    <div class="alert alert-danger">{{ upload.error }}</div>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="mb-3">{% include "market_data/_progress.html" with upload=upload %}</div>
+        <div class="row small">
+            <div class="col-md-3"><span class="text-muted">Uploaded by</span><div>{{ upload.uploaded_by.username|default:"-" }}</div></div>
+            <div class="col-md-3"><span class="text-muted">Uploaded</span><div>{{ upload.created_at|date:"d M Y, H:i" }} UTC</div></div>
+            <div class="col-md-3"><span class="text-muted">Started</span><div>{{ upload.started_at|date:"d M Y, H:i"|default:"-" }}</div></div>
+            <div class="col-md-3"><span class="text-muted">Finished</span><div>{{ upload.finished_at|date:"d M Y, H:i"|default:"-" }}</div></div>
+        </div>
+        {% if upload.tickers %}<p class="small mb-0 mt-3"><span class="text-muted">Only these tickers:</span> {{ upload.tickers }}</p>{% endif %}
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    {% include "dashboards/_stat_card.html" with title="Tickers loaded" value=upload.tickers_loaded %}
+    {% include "dashboards/_stat_card.html" with title="Rows added" value=upload.rows_inserted css_class="text-success" %}
+    {% include "dashboards/_stat_card.html" with title="Rows skipped (already stored or invalid)" value=upload.rows_skipped %}
+    {% include "dashboards/_stat_card.html" with title="Files with problems" value=problem_results|length css_class="text-danger" %}
+</div>
+
+{% if problem_results %}
+    <h4 class="mb-3">Files with problems</h4>
+    <div class="card shadow-sm mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead class="table-dark"><tr><th>File</th><th>Ticker</th><th>Result</th><th>Reason</th></tr></thead>
+                    <tbody>
+                        {% for result in problem_results %}
+                            <tr>
+                                <td>{{ result.file }}</td>
+                                <td>{{ result.ticker|default:"-" }}</td>
+                                <td><span class="badge text-bg-{% if result.status == 'failed' %}danger{% else %}warning{% endif %}">{{ result.status|title }}</span></td>
+                                <td>{{ result.message }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+{% endif %}
+
+<h4 class="mb-3">Loaded files</h4>
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 480px">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-dark sticky-top"><tr><th>File</th><th>Ticker</th><th class="text-end">Rows added</th><th class="text-end">Rows skipped</th><th>Note</th></tr></thead>
+                <tbody>
+                    {% for result in loaded_results %}
+                        <tr>
+                            <td>{{ result.file }}</td>
+                            <td>{{ result.ticker }}</td>
+                            <td class="text-end">{{ result.inserted }}</td>
+                            <td class="text-end">{{ result.skipped }}</td>
+                            <td class="small text-muted">{{ result.message }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5" class="text-muted p-4">{% if upload.is_active %}Nothing loaded yet.{% else %}No files were loaded.{% endif %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

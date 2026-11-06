@@ -1,0 +1,11 @@
+{% if upload.total_files %}
+    <div class="progress" role="progressbar" aria-valuenow="{{ upload.progress_percent }}" aria-valuemin="0" aria-valuemax="100" style="height: 18px">
+        <div class="progress-bar {% if upload.status == 'failed' %}bg-danger{% elif upload.status == 'completed' %}bg-success{% else %}progress-bar-striped progress-bar-animated{% endif %}" style="width: {{ upload.progress_percent }}%">
+            {{ upload.files_processed }} / {{ upload.total_files }}
+        </div>
+    </div>
+{% elif upload.status == "pending" %}
+    <span class="small text-muted">Waiting for the Celery worker</span>
+{% else %}
+    <span class="small text-muted">-</span>
+{% endif %}

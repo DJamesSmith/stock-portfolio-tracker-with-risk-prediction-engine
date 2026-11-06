@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.utils import timezone
 
-from config.application_logger import ApplicationLogger
+from core.application_logger import ApplicationLogger
 from core.cache import get_from_cache, portfolio_summary_key, save_to_cache
 from market_data.selectors import latest_price, latest_prices
 from market_data.tasks import refresh_single_ticker

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% load dashboard_tags ml_tags %}
+{% block title %} {{ model.version }} {% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+    <div>
+        <a href="{% url 'ml_training:model-list' %}" class="small">&larr; Model versions</a>
+        <h1 class="mb-1">{{ model.version }}</h1>
+        <p class="text-muted mb-0">{{ model.type_name }} &middot; {{ model.metadata.algorithm }} &middot; trained {{ model.metadata.trained_at|to_datetime|date:"d M Y, H:i" }} UTC on {{ model.metadata.tickers_count }} tickers</p>
+    </div>
+    {% if model.is_latest %}<span class="badge text-bg-success fs-6">In use</span>{% else %}<span class="badge text-bg-secondary fs-6">Older version</span>{% endif %}
+</div>
+
+<div class="alert alert-{% if model.beats_baseline %}success{% else %}warning{% endif %}">{{ model.metadata.comparison.note }}</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5>Label</h5>
+                <p class="mb-1"><strong>{{ model.metadata.label.name }}</strong>: {{ model.metadata.label.classes|join:", " }}</p>
+                <p class="small text-muted mb-2">{{ model.metadata.label.source|capfirst }}.</p>
+                {% if model.metadata.label.thresholds %}
+                    <p class="small mb-0">Low up to <code>{{ model.metadata.label.thresholds.low_max }}</code>, medium up to <code>{{ model.metadata.label.thresholds.medium_max }}</code>, high above that (daily return standard deviation, taken from the training period).</p>
+                {% endif %}
+                <h6 class="mt-3">Features</h6>
+                <p class="mb-0">{% for feature in model.metadata.features %}<code class="d-inline-block me-2">{{ feature }}</code>{% endfor %}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5>Date split</h5>
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Part</th><th>From</th><th>To</th><th class="text-end">Rows</th></tr></thead>
+                    <tbody>
+                        {% for split in model.splits %}
+                            <tr><td>{{ split.name }}</td><td>{{ split.start }}</td><td>{{ split.end }}</td><td class="text-end">{{ split.rows }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% if model.metadata.training_window.label_gap_days %}
+                    <p class="small text-muted mt-2 mb-0">A {{ model.metadata.training_window.label_gap_days }}-day gap is left before each split so 30-day labels never overlap the next period.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5>Compared with baselines</h5>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th colspan="{{ model.metric_names|length }}" class="text-center border-start">Validation</th>
+                        <th colspan="{{ model.metric_names|length }}" class="text-center border-start">Test</th>
+                    </tr>
+                    <tr>
+                        <th>Model</th>
+                        {% for name in model.metric_labels %}<th class="text-end {% if forloop.first %}border-start{% endif %}">{{ name }}</th>{% endfor %}
+                        {% for name in model.metric_labels %}<th class="text-end {% if forloop.first %}border-start{% endif %}">{{ name }}</th>{% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in model.comparison_rows %}
+                        <tr {% if forloop.first %}class="fw-semibold"{% endif %}>
+                            <td>{{ row.name }}</td>
+                            {% for value in row.values %}<td class="text-end">{{ value|metric }}</td>{% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if model.per_class or model.confusion_matrix %}
+    <div class="row g-4 mb-4">
+        {% if model.per_class %}
+            <div class="col-lg-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h5>Per-class scores (test)</h5>
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Class</th><th class="text-end">Precision</th><th class="text-end">Recall</th><th class="text-end">F1</th><th class="text-end">Rows</th></tr></thead>
+                            <tbody>
+                                {% for row in model.per_class %}
+                                    <tr><td>{% include "dashboards/_risk_badge.html" with label=row.label %}</td><td class="text-end">{{ row.precision|metric }}</td><td class="text-end">{{ row.recall|metric }}</td><td class="text-end">{{ row.f1|metric }}</td><td class="text-end">{{ row.support }}</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+        {% if model.confusion_matrix %}
+            <div class="col-lg-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h5>Confusion matrix (test)</h5>
+                        <table class="table table-sm table-bordered text-center mb-1">
+                            <thead>
+                                <tr><th class="text-start">Actual \ Predicted</th>{% for label in model.confusion_matrix.labels %}<th>{{ label|title }}</th>{% endfor %}</tr>
+                            </thead>
+                            <tbody>
+                                {% for row in model.confusion_matrix.rows %}
+                                    <tr>
+                                        <th class="text-start">{{ row.actual|title }}</th>
+                                        {% for count in row.counts %}
+                                            <td {% if forloop.counter0 == forloop.parentloop.counter0 %}class="table-success fw-semibold"{% endif %}>{{ count }}</td>
+                                        {% endfor %}
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        <p class="small text-muted mb-0">Green cells are correct predictions.</p>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+{% endif %}
+
+{% if model.feature_importances %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h5>Feature importance</h5>
+            {% for feature in model.feature_importances %}
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <code style="width: 150px">{{ feature.name }}</code>
+                    <div class="progress flex-grow-1" style="height: 16px">
+                        <div class="progress-bar bg-dark" style="width: {{ feature.percent }}%"></div>
+                    </div>
+                    <span class="small text-muted" style="width: 60px">{{ feature.value|metric }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+{% endif %}
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <h5>Parameters</h5>
+        <div class="row small">
+            {% for name, value in model.parameters %}
+                <div class="col-md-4 mb-1"><span class="text-muted">{{ name }}</span>: <code>{{ value|default_if_none:"None" }}</code></div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
