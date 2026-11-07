@@ -1,1505 +1,470 @@
 STOCK PORTFOLIO RISK & FORECASTING PLATFORM
-IMPLEMENTATION PLAN — STRUCTURED POINT-WISE NOTES
+IMPLEMENTATION PLAN — STRUCTURED POINT-WISE NOTES (VERSION 2)
 
 Document basis:
-- Based on the business requirements PDF (v1.0, September 2026) and the latest project code reviewed on 14 October 2026.
-- The Accounts app has been implemented, but it has blocking defects that must be fixed before the next development phase.
-- The implementation sequence below follows the reviewed implementation plan. It intentionally places Market Data before Portfolios because portfolio valuation depends on historical/current stock prices.
+- Based on the business requirements PDF version 2.0 (November 2026).
+- Based on the project code reviewed on 7 November 2026.
+- Phases 0 to 9B are complete.
+- The remaining work prepares the backend for a Flutter test client, builds that client, then covers deployment and future scope.
+- The Flutter app is a separate project. It only uses the existing REST API. It never connects to the database directly.
 
 ======================================================================
 1. PROJECT OVERVIEW
 ======================================================================
 
 1.1 What the platform does
-- The platform is a Django REST Framework backend for investors who want to track stock portfolios.
-- Investors can create portfolios and add stock holdings to them.
-- The system stores historical stock market data and retrieves current/latest prices.
-- Each holding receives two machine-learning outputs:
-  - Risk classification: Low, Medium, or High.
-  - Next-trading-day direction prediction: Up or Down.
-- The risk model is a Random Forest classifier.
-- The direction model is a Gradient Boosting classifier.
-- The system exposes functionality through JWT-secured REST API endpoints.
-- The backend is intended to support a Flutter client in the future without requiring fundamental backend changes.
+- Investors track stock portfolios and holdings.
+- The system stores daily stock prices (OHLCV) for every ticker.
+- Every holding receives two machine-learning outputs:
+  - Risk label: low, medium or high (Random Forest, checked against a Logistic Regression baseline).
+  - Next-trading-day direction: up or down (Gradient Boosting, checked against "always up" and "same as today" baselines).
+- Admins upload the price dataset and train the models from Django web pages.
+- Every feature for investors and analysts is available through a JWT-secured REST API.
+- The REST API is used by a Flutter app to test the project on a phone, emulator or browser.
 
-1.2 User roles and permissions
+1.2 Clients
+- Flutter app (primary test client):
+  - Used by investors, analysts and admins.
+  - Talks only to the /api/ endpoints with JWT tokens.
+- Django web pages (session login):
+  - Same role-based dashboards, portfolios and holdings.
+  - Admin-only pages for dataset upload and model training.
+- Postman collection:
+  - Runs the full API workflow automatically.
+  - Used to check the API before and after every phase.
+
+1.3 User roles
 - Investor:
-  - Creates and manages their own portfolios and holdings.
-  - Views their own portfolio values, stock prices, risk labels, and forecasts.
-  - Cannot access another investor's private portfolio data.
+  - Created by public registration (the only role registration can create).
+  - Manages their own portfolios and holdings.
+  - Sees their own prices, risk labels, forecasts and dashboard.
 - Analyst:
-  - Has read-only access to portfolios belonging to investors assigned to that analyst.
-  - Assignment is represented by User.assigned_analyst.
-  - Can trigger permitted market-price refreshes and ML recomputations.
-  - Cannot create, edit, or delete investors' portfolios or holdings.
+  - A registered user whose role an admin changed to analyst.
+  - Read-only access to the portfolios of investors assigned to them.
+  - Can queue price refreshes and prediction recomputes.
 - Admin:
-  - Can view all users, portfolios, holdings, and system-wide information.
-  - Manages user roles and analyst assignments.
-  - Has administrative access across the platform.
+  - Created with createsuperuser, or promoted by another admin.
+  - Sees everything.
+  - Manages roles and analyst assignments.
+  - Uploads datasets and trains models.
 
-1.3 Main Django apps
+1.4 Django apps (current structure)
 - accounts:
   - Custom User model.
-  - Registration and login.
-  - JWT creation, refresh, logout, and refresh-token blacklist.
-  - User profile management.
+  - Registration, login, JWT access and refresh tokens, logout blacklist.
+  - Profile, change password.
   - Role management and analyst assignment.
+  - Web login, register, profile and user management pages.
 - core:
-  - Shared permission classes.
-  - Pagination.
-  - Standard API exception handling.
-  - API throttling.
-  - Cache key and cache invalidation helpers.
+  - Shared code: ApplicationLogger, @log_execution_time, @admin_required, api_response helper.
+  - Permissions, pagination, exception handler, throttles.
+  - Cache keys and invalidation, MultipleFileField, Celery ping task.
+  - The old config folder was merged into core.
 - market_data:
-  - Stores stock OHLCV price history.
-  - Loads historical market data.
-  - Fetches new market prices.
-  - Provides latest-price and historical-price APIs.
+  - PriceHistory and DatasetUpload models.
+  - Dataset upload pages (CSV files, folder or zip) and the Celery import task.
+  - Yahoo Finance provider and daily price tasks.
+  - Price APIs.
 - portfolios:
-  - Stores portfolios and holdings.
-  - Enforces investor, analyst, and admin access rules.
-  - Provides portfolio CRUD, holding CRUD, and portfolio summaries.
+  - Portfolio and Holding models.
+  - Role-scoped CRUD APIs.
+  - Portfolio summary.
+- ml_training:
+  - All training code: algorithms.py (RandomForestClassifier, LogisticRegression, HistGradientBoostingClassifier).
+  - feature_engineering.py, labels.py, dataset.py, train_risk.py, train_forecast.py, registry.py.
+  - TrainingRun model, training tasks.
+  - Admin training and model version pages.
 - analytics:
-  - Engineers ML features.
-  - Trains and loads ML models.
-  - Runs asynchronous prediction tasks.
-  - Provides risk and forecast APIs.
-  - Does not own a separate database table in the current plan; ML output fields are written onto Holding.
+  - Uses the trained models.
+  - Prediction tasks, risk and forecast APIs, portfolio risk summary.
+- dashboards:
+  - Investor, analyst and admin dashboards (API and web).
+  - Holding price trend.
+  - Portfolio and holding web pages.
 
-1.4 Main database relationships
-- One User can own multiple Portfolios.
-- One Portfolio can contain multiple Holdings.
-- A Holding stores a ticker symbol, such as AAPL or MSFT.
-- PriceHistory stores market data by ticker and trading date.
-- Holding and PriceHistory are joined at query time using the ticker string.
-- There is deliberately no foreign key from PriceHistory to Holding:
-  - Market prices for a ticker are shared by every investor holding that ticker.
-- User.assigned_analyst is a self-referencing foreign key:
-  - It links an investor to the analyst responsible for that investor.
-  - It is restricted to users whose role is Analyst.
-
-1.5 Request and background-processing flows
-- Normal synchronous API request:
-  1. Client sends an HTTP request with a JWT.
-  2. JWTAuthentication validates the access token.
-  3. Permission classes check role-level and object-level access.
-  4. The view processes the request.
-  5. The serializer validates input or formats output.
-  6. Django ORM reads or writes PostgreSQL.
-  7. The response is returned to the client through the serializer.
-  8. Heavy read endpoints, such as portfolio summaries, check Redis cache before querying the database.
-- Background/asynchronous processing:
-  1. Celery Beat triggers scheduled jobs.
-  2. Jobs are placed on the Redis broker queue.
-  3. A Celery worker executes the tasks.
-  4. Tasks fetch market prices, recompute ML outputs, or retrain models.
-  5. Results are saved to PostgreSQL through the Django ORM.
-  6. Related Redis cache entries are invalidated.
-  7. Celery task results are stored separately in Redis.
-
-1.6 End-to-end user journey
-- Investor registers and logs in.
-- Login returns:
-  - Access token valid for 15 minutes.
-  - Refresh token valid for 7 days.
-- Investor creates a portfolio.
-- Investor adds a holding with ticker, quantity, buy price, and buy date.
-- If recent price data for that ticker is unavailable:
-  - The API queues a background price-ingestion task.
-  - The API does not call the external market provider inside the request.
-- Scheduled ML tasks calculate risk and forecast outputs for holdings with sufficient price history.
-- The investor requests the portfolio summary.
-- Redis returns a cached summary when a valid cached result exists; otherwise the API calculates it.
-- The assigned analyst can view the same investor portfolio in read-only mode.
-- When the access token expires, the client uses the refresh token to obtain a new access token.
-- Logout blacklists the refresh token so it cannot be used again.
+1.5 Database tables
+- users: custom User with role and the self-referencing assigned_analyst.
+- portfolios: owned by one user.
+- holdings: belong to one portfolio, carry the ML output fields.
+- price_history: shared daily prices, unique on (ticker, date), joined to holdings by ticker.
+- dataset_uploads: one row per dataset upload, with status, progress and per-file results.
+- training_runs: one row per training run, with status, current step, new versions and results.
 
 ======================================================================
-2. IMPLEMENTATION ORDER AND PHASE DEPENDENCIES
+2. STANDING DEVELOPMENT RULES
 ======================================================================
 
-- Phase 0: Project foundation.
-- Phase 1: Accounts app.
-- Phase 1A: Fix and harden Accounts. This is the immediate next task and must be completed before Phase 2.
-- Phase 2: Core app and project infrastructure.
-- Phase 3: Market Data app.
-- Phase 4: Portfolios app.
-- Phase 5: ML research and model training.
-- Phase 6: Analytics app and ML serving.
-- Phase 7: Dashboards and role-based views.
-- Phase 8: Security, performance, and non-functional hardening.
-- Phase 9: Testing, API documentation, and end-to-end verification.
-- Phase 10: Deployment readiness and future scope.
-
-Important sequencing decisions:
-- Market Data is implemented before Portfolios, even though the source requirements PDF lists Portfolios first.
-- Portfolio valuation requires current/latest stock prices.
-- Portfolio summary calculations also depend on PriceHistory.
-- Implementing Market Data first allows portfolio endpoints to be built and tested against real stored price data rather than temporary placeholders.
-- Market Data depends on the Accounts app for authentication.
-- Phase 5 (ML research and training) can run in parallel with Phase 4 (Portfolios), once Phase 3 price data is available.
-- Phase 6 depends on both the completed Portfolio/Holding implementation and trained ML models.
+- Function-based views only.
+- PyJWT for tokens, not SimpleJWT.
+- Beginner-friendly code with no comments.
+- Django forms / ModelForms for validation, DRF serializers only for output.
+- Every API response uses the status / message / data / errors format.
+- settings.py stays a single file.
+- Only add code or settings that are actually required, and explain why each one is needed.
+- Update the Postman collection every phase.
+- Deliver zips with only the changed files, and list any files to delete.
+- Claude runs makemigrations, migrate and the tests; tests.py files are not delivered.
 
 ======================================================================
-3. PHASE 0 — PROJECT FOUNDATION
+3. PHASE STATUS SUMMARY
 ======================================================================
 
-Status:
-- Mostly completed.
-- Remaining foundation issues are carried into Phase 1A and Phase 2.
-
-What Phase 0 establishes:
-- Django project setup.
-- PostgreSQL database connection.
-- Environment-variable configuration through .env.
-- Django REST Framework.
-- CORS configuration.
-- Redis cache configuration.
-- Application logging.
-- Initial Celery integration.
-
-Outstanding issues identified:
-- No requirements files exist:
-  - The project cannot currently be recreated reliably in a fresh virtual environment.
-  - Dependency files are scheduled for Phase 2.
-- celery.py is not configured correctly:
-  - It cannot reliably start a Celery worker.
-  - Fix this under Phase 1A.
-- DEBUG=True and ALLOWED_HOSTS=[] are hard-coded:
-  - Move these settings to environment variables in Phase 2.
-- MAILERS is not a valid Django setting:
-  - If email is required, use Django's EMAIL_BACKEND setting.
-- Settings package naming is inconsistent:
-  - Current Django settings live in stock_risk_engine/.
-  - The requirements PDF refers to config.settings.
-  - The repository's config/ directory currently contains the logger.
-  - Resolve this naming inconsistency during Phase 2.
-
-Completion direction:
-- Preserve the existing foundation.
-- Fix the Celery startup problem in Phase 1A.
-- Make settings environment-driven and reproducible in Phase 2.
+Phase 0   Project foundation ................................ Complete
+Phase 1   Accounts app ...................................... Complete
+Phase 1A  Accounts fix-up and hardening ..................... Complete
+Phase 2   Core app and project infrastructure ............... Complete
+Phase 3   market_data app ................................... Complete
+Phase 4   portfolios app .................................... Complete
+Phase 5   ML research and model training .................... Complete
+Phase 6   analytics app and ML serving ...................... Complete
+Phase 7   Dashboards and role-based views ................... Complete
+Phase 8   Security, performance and hardening ............... Complete
+Phase 9   Testing, Postman and README ....................... Complete
+Phase 9B  GUI dataset upload, GUI training, ml_training app . Complete
+Phase 10  Flutter readiness (backend) ....................... Next
+Phase 11  Flutter test client ............................... Planned
+Phase 12  Deployment ........................................ Planned
+Phase 13  Future scope ...................................... Planned
 
 ======================================================================
-4. PHASE 1 — ACCOUNTS APP
+4. COMPLETED PHASES (SUMMARY)
 ======================================================================
 
-Status:
-- Feature-complete against the Accounts requirements in PDF section 9.1.
-- Not yet reliable end to end because of the defects listed in Phase 1A.
-- Complete Phase 1A before moving to Phase 2.
+4.1 Phase 0 — Project foundation
+- Django project stock_risk_engine, PostgreSQL connection, .env loading with python-dotenv.
+- Single settings.py, local only, DEBUG = True.
 
-4.1 Implemented Accounts functionality
-- Custom User model:
-  - Inherits from AbstractBaseUser and PermissionsMixin.
-  - Configured as AUTH_USER_MODEL.
-  - Includes user role and analyst assignment.
-  - Includes is_active, is_staff, date_joined, and updated_at.
-  - Uses the database table name users.
-- User model behaviour:
-  - User.save() clears assigned_analyst for Analysts and Admins.
-  - createsuperuser forces the Admin role.
-- JWT authentication:
-  - Uses PyJWT, not SimpleJWT.
-  - Access and refresh tokens use separate secrets.
-  - Tokens include a token_type claim.
-  - Refresh tokens include a jti claim.
-  - Access-token lifetime is 15 minutes.
-  - Refresh-token lifetime is 7 days.
-  - Lifetimes are read from environment variables.
-- JWTAuthentication:
-  - Reads Bearer tokens from the Authorization header.
-  - Is configured as the default DRF authentication class.
-- Refresh-token blacklist:
-  - Stores the refresh token's jti in Redis cache.
-  - Uses a TTL matching the token's remaining lifetime.
-- Serializers:
-  - MinimalUser.
-  - User.
-  - Register, including password confirmation and unique username/email validation.
-  - Login, supporting username or email.
-  - AdminUserUpdate, including role and analyst-assignment rules.
-- Permission classes already present:
-  - IsAdmin.
-  - IsInvestor.
-  - IsAnalyst.
-  - IsAdminOrSelf.
-- Eight Accounts API endpoints are represented in the implementation plan.
-- Django admin integration for User exists.
-- Bootstrap template pages exist:
-  - Home.
-  - Register.
-  - Login.
-  - Dashboard.
-  - Profile.
-  - User list.
-- script.js contains role and analyst form behaviour.
-- ApplicationLogger writes to app.log.
-- @log_execution_time decorator exists.
-- PostgreSQL, Redis cache, Celery, and CORS settings have been started.
-- .gitignore covers .env, logs, virtual environments, and model files.
+4.2 Phase 1 and 1A — Accounts
+- Custom User model set as AUTH_USER_MODEL from the first migration.
+- Registration always creates an investor.
+- Login with username or email.
+- Access token (15 minutes) and refresh token (7 days), each signed with its own secret.
+- Logout blacklists the refresh token in Redis.
+- Password change invalidates all older tokens.
+- Admin role changes and analyst assignment with safety rules:
+  - An admin cannot change their own role.
+  - Demoting an analyst unassigns all of their investors.
+  - Only investors can have an assigned analyst.
 
-4.2 Accounts API endpoints
-- POST /api/accounts/register/
-  - Public endpoint.
-  - Creates a new investor.
-  - The role is forced to Investor; the client cannot register as Admin or Analyst.
-- POST /api/accounts/login/
-  - Public endpoint.
-  - Accepts username or email with password.
-  - Returns user information and access/refresh tokens.
-- POST /api/accounts/token/refresh/
-  - Accepts a valid refresh token.
-  - Returns a new access token.
-- POST /api/accounts/logout/
-  - Requires authentication.
-  - Blacklists the supplied refresh token's jti.
-- GET /api/accounts/me/
-  - Requires authentication.
-  - Returns the authenticated user's profile.
-- PATCH /api/accounts/me/
-  - Requires authentication.
-  - Updates permitted profile fields.
-  - Role and analyst assignment are read-only for the user.
-- GET /api/accounts/users/
-  - Admin only.
-  - Lists all users.
-- PATCH /api/accounts/users/{id}/
-  - Admin only.
-  - Changes a user's role or assigned analyst, subject to business rules.
+4.3 Phase 2 — Core infrastructure
+- Permissions, pagination (20 per page, page_size up to 100), exception handler, Redis throttles.
+- Cache helpers.
+- Celery app, Redis broker and results, Celery Beat schedule.
+- ApplicationLogger with rotating logs/app.log.
 
-4.3 Not yet implemented
-- core app.
-- market_data app.
-- portfolios app.
-- analytics app.
-- Requirements files.
-- Split settings modules.
-- Pagination.
-- Custom exception handler.
-- API throttles.
-- Automated Accounts tests.
-- Docker files.
+4.4 Phase 3 — market_data
+- PriceHistory model with unique (ticker, date).
+- Yahoo Finance provider.
+- fetch_daily_prices and refresh_single_ticker tasks.
+- Latest price, price history and refresh APIs.
+- Dataset loading moved to the Datasets page in Phase 9B; the load_price_history command was removed.
+
+4.5 Phase 4 — portfolios
+- Portfolio and Holding CRUD with role-scoped querysets.
+- ML fields are read-only to clients.
+- Portfolio summary with value, gain/loss and risk distribution.
+- Adding a holding for a ticker without recent prices queues a price download.
+
+4.6 Phase 5 — ML training
+- Eight leak-free features.
+- Risk labels from future 30-day volatility; direction labels from the next close.
+- Time-based split: train up to 2022, validation 2023, test 2024 onwards, with a 45-day label gap for risk.
+- Versioned model registry in ml_models/.
+- Code moved into the ml_training app in Phase 9B; the train_models command was removed.
+
+4.7 Phase 6 — analytics serving
+- Nightly risk and forecast recompute tasks.
+- Single-holding recompute API and task status API.
+- Risk, forecast and portfolio risk-summary APIs with caching.
+
+4.8 Phase 7 — Dashboards
+- Investor, analyst and admin dashboard APIs and web pages.
+- Holding trend API and price chart.
+
+4.9 Phase 8 — Hardening
+- Separate Redis databases for broker, results, cache and blacklist (settings refuse to start otherwise).
+- Throttles, query optimisation, cache invalidation, logging of denials and failures.
+
+4.10 Phase 9 — Testing and documentation
+- Integrated test suite run by Claude: permission matrix, Celery, ML features, end-to-end journey.
+- Postman collection with automatic token refresh per role.
+- README and .env.example.
+
+4.11 Phase 9B — Template control of data and training
+- config merged into core.
+- New ml_training app holding all training code.
+- Datasets page:
+  - Upload CSV files, a folder or the Kaggle zip.
+  - Progress bar, per-file results.
+  - Fetch latest prices button.
+- ML Training page:
+  - Data readiness checks.
+  - Train both or one model, optional ticker filter, optional prediction update.
+  - Live run progress, cancel while waiting.
+  - Training history.
+- Model versions pages: baseline comparison, confusion matrix, feature importance, parameters.
+- Scheduled weekly retraining now creates a TrainingRun.
 
 ======================================================================
-5. PHASE 1A — ACCOUNTS FIX-UP AND HARDENING
+5. PHASE 10 — FLUTTER READINESS (BACKEND)
 ======================================================================
 
-Priority:
-- This is the immediate next phase.
-- Fix the blocking issues before building new apps.
-- The Accounts app must run end to end before Phase 2 begins.
+Goal: the Flutter app can reach the API from every test target, and every API contract Flutter depends on is confirmed and documented.
 
-5.1 Blocking defect 1A-1 — URL configuration is incorrect
-- Current problem:
-  - accounts/urls.py imports LoginView, MeView, and other API class views from views/views.py.
-  - That module only defines function-based template views such as home_view, register_view, and others.
-  - The URL list is duplicated.
-  - Template pages are not routed correctly.
-  - Templates using {% url 'accounts:...' %} can fail because the only configured namespace is api_accounts.
-- Required fix:
-  - Separate API URLs from web/template URLs.
-  - Create accounts/urls/api_urls.py:
-    - Set app_name = "api_accounts".
-    - Register the API class-based views.
-  - Create accounts/urls/web_urls.py:
-    - Set app_name = "accounts".
-    - Register the function-based template views.
-    - Use route names: home, register, login, logout, dashboard, profile, user-list, and user-role-update.
-  - Mount API URLs under api/accounts/.
-  - Mount web URLs at the root.
-  - Set LOGIN_URL to accounts:login.
-  - Set LOGIN_REDIRECT_URL to accounts:dashboard.
+5.1 Network access for Flutter test targets
+- Problem:
+  - ALLOWED_HOSTS = [] with DEBUG = True only accepts localhost, 127.0.0.1 and [::1].
+  - The Android emulator reaches the computer as 10.0.2.2, so Django rejects it with 400 Bad Request (DisallowedHost).
+  - A physical phone reaches the computer by its Wi-Fi IP address (for example 192.168.1.20), which is also rejected.
+- Required change:
+  - ALLOWED_HOSTS = ["localhost", "127.0.0.1", "10.0.2.2", "<your computer's Wi-Fi IP>"].
+- Run the server on all network interfaces when testing on a physical phone:
+  - python manage.py runserver 0.0.0.0:8000
+- Base URL used by Flutter on each target:
+  - Android emulator: http://10.0.2.2:8000
+  - iOS simulator: http://127.0.0.1:8000
+  - Physical phone on the same Wi-Fi: http://<computer IP>:8000
+  - Flutter web (Chrome): http://127.0.0.1:8000
+- Android allows plain HTTP to these addresses only in debug builds with cleartext traffic enabled (Phase 11 setting).
 
-5.2 Blocking defect 1A-2 — Refresh-token view crashes
-- Current problem:
-  - RefreshTokenView treats create_access_token(user) as if it returns a dictionary.
-  - It attempts to access ["access"].
-  - The function actually returns a token string.
-- Required fix:
-  - Assign the returned string directly:
-    - access_token = create_access_token(user)
-  - Return that string in the expected API response.
+5.2 CORS for Flutter web
+- CORS only matters for Flutter web in a browser. Android and iOS apps are not affected by CORS.
+- The current CORS_ALLOWED_ORIGINS already allows http://localhost:3000 and http://127.0.0.1:3000.
+- Simplest approach, no setting change:
+  - Run Flutter web on port 3000: flutter run -d chrome --web-port 3000
+- Only change CORS_ALLOWED_ORIGINS if a different port is needed.
 
-5.3 Blocking defect 1A-3 — JWT secret keys are empty
-- Current problem:
-  - .env contains empty JWT_SECRET_KEY and JWT_REFRESH_SECRET_KEY values.
-  - os.getenv(name, SECRET_KEY) does not use the fallback when the environment variable exists but contains an empty string.
-  - PyJWT 2.14 rejects an empty HMAC key.
-  - Login therefore fails when token creation is attempted.
-- Required fix:
-  - Generate two different long random secrets using secrets.token_urlsafe(64).
-  - Read each value using the equivalent of os.getenv(name) or SECRET_KEY so an empty string also falls back.
-  - Ensure both JWT secrets are different from one another.
-  - Ensure both JWT secrets are different from Django SECRET_KEY.
-  - Refuse to start outside DEBUG mode if either JWT secret is empty.
-  - Keep the secrets in environment configuration, not source control.
+5.3 Celery app import
+- stock_risk_engine/__init__.py must contain: from .celery import app as celery_app
+- Without it, tasks queued outside web requests (shell, Beat) use Celery's default app and ignore the CELERY_* settings.
+- This line has been removed from the uploaded code again and must be restored.
 
-5.4 Blocking defect 1A-4 — Celery cannot start
-- Current problems:
-  - celery.py sets DJANGO_SETTINGS_MODULE to config.settings, which does not match the current settings package.
-  - The logger import uses a relative path that goes beyond the top-level package.
-  - stock_risk_engine/__init__.py does not load the Celery app.
-  - The Celery app is named stock_tracker rather than stock_risk_engine.
-- Required fix:
-  - Point DJANGO_SETTINGS_MODULE to stock_risk_engine.settings, or to the appropriate settings module after the Phase 2 settings split.
-  - Import ApplicationLogger using:
-    - from config.application_logger import ApplicationLogger
-  - Add the Celery app import to stock_risk_engine/__init__.py:
-    - from .celery import app as celery_app
-  - Rename the Celery app to stock_risk_engine.
-  - Verify that celery -A stock_risk_engine worker starts.
+5.4 API contract confirmed for Flutter (no code change expected)
+- Login and /api/accounts/me/ return the user's role, so Flutter can choose investor, analyst or admin screens.
+- Decimal values (prices, quantities, values) are returned as strings. Flutter parses them with double.parse or a decimal package.
+- Dates are YYYY-MM-DD. Date-times are ISO 8601 in UTC.
+- Lists are paginated: count, next, previous, results.
+- 401 means the access token expired or is invalid: refresh once, then retry; if refresh fails, log out.
+- 403 means the role is not allowed. 404 means the record is not visible to this user.
+- 429 includes errors.retry_after_seconds.
+- 202 responses return a task_id. Flutter polls /api/analytics/tasks/{task_id}/ (analyst and admin only).
+- Validation errors are field lists in errors, so Flutter can show them under each form field.
 
-5.5 Behaviour and security fixes
-- 1A-5 — Prevent an admin from demoting themselves:
-  - Current problem: the API permits an admin to change their own role.
-  - Risk: the system could be left without an admin.
-  - Required fix: apply the same self-role-change restriction in the API that already exists in the template view.
-- 1A-6 — Clear assignments when an analyst is demoted:
-  - Current problem: investors can remain assigned to a user who is no longer an Analyst.
-  - Required fix:
-    - When an Analyst changes to another role, clear assigned_analyst for all investors assigned to that user.
-    - Perform the role update and assignment cleanup inside a database transaction.
-- 1A-7 — Clear analyst assignment when an investor changes role:
-  - Current problem: changing an Investor who has an assigned analyst into an Analyst or Admin can fail validation.
-  - Required fix:
-    - When a user's role changes away from Investor, clear that user's assigned_analyst.
-    - Do not attempt to preserve an analyst assignment for an Analyst or Admin.
-- 1A-8 — Protect password changes:
-  - Current problem: PATCH /me/ can change a password without asking for the current password.
-  - Required fix:
-    - Add a dedicated change-password endpoint that accepts the old and new passwords, or require old_password in the profile update flow.
-    - Consider invalidating existing refresh tokens after a password change.
-- 1A-9 — Correct login validation status codes:
-  - Current problem: missing login fields currently return 401.
-  - Required behaviour:
-    - Return HTTP 400 for missing or invalid input fields.
-    - Return HTTP 401 only when credentials are incorrect.
-- 1A-10 — Add pagination to the user list:
-  - Current problem: GET /users/ is not paginated.
-  - Required fix:
-    - Convert the endpoint to ListAPIView once Phase 2 pagination is available.
-- 1A-11 — Keep role and staff status consistent:
-  - Current problem: role=Admin and is_staff are independent fields.
-  - Required decision:
-    - Decide whether User.save() should synchronise is_staff with the Admin role.
-    - Document the selected behaviour.
-    - Apply it consistently.
+5.5 Optional — admin status in Flutter
+- Only if the Flutter admin should show dataset uploads and training runs.
+- Read-only admin APIs:
+  - GET /api/market/uploads/
+  - GET /api/market/uploads/{id}/
+  - GET /api/ml/training-runs/
+  - GET /api/ml/training-runs/{id}/
+  - GET /api/ml/models/
+- Uploading files and starting training stay in the Django web pages.
 
-5.6 Repository hygiene and secret handling
-- Remove __MACOSX/ and .DS_Store from the repository and project ZIP.
-- The existing ZIP contains a .env with real database credentials and Django SECRET_KEY.
-- .env is git-ignored, but it must not be committed or shared in project archives.
-- Add a committed .env.example containing variable names and blank/sample-safe values only.
-- Rotate Django SECRET_KEY before deployment because it has been exposed in the project archive.
-- Resolve environment naming inconsistency:
-  - Current code uses DB_*.
-  - The requirements PDF uses DATABASE_*.
-  - Choose one naming convention and use it in code and documentation.
-- Fix application log location:
-  - Current app.log path depends on the process's current working directory.
-  - Celery started from another directory could create a second log file.
-  - Use BASE_DIR / "logs" / "app.log".
-- Fix log timestamps:
-  - Existing log entries mix local and UTC time, causing timestamps to appear out of sequence.
-  - Use one consistent timezone in the log formatter.
+5.6 Optional — OpenAPI documentation
+- drf-spectacular schema and Swagger page, only if a browsable API reference is wanted for Flutter work.
 
-5.7 Tests required for Phase 1A
-- Registration:
-  - Role is always Investor.
-  - Duplicate username is rejected.
-  - Duplicate email is rejected.
-  - Password mismatch is rejected.
-- Login:
-  - Login by username works.
-  - Login by email works.
-  - Inactive users are rejected.
-  - Missing fields return 400.
-  - Incorrect credentials return 401.
-- JWT:
-  - Access token works on /me/.
-  - Refresh token is rejected when used as an access token.
-  - Access token is rejected when used as a refresh token.
-  - Refresh fails after logout/blacklisting.
-- Permissions and role changes:
-  - Non-admin receives 403 on /users/.
-  - Admin cannot demote themselves.
-  - Demoting an Analyst clears that Analyst's assigned investors.
-  - Changing an Investor to Analyst or Admin clears the Investor's analyst assignment.
-- Completion criteria:
-  - Django runserver starts without errors.
-  - Template pages load.
-  - Every Accounts endpoint in PDF section 9.1 works in Postman.
-  - celery -A stock_risk_engine worker starts.
-  - Accounts tests pass.
+5.7 Phase 10 deliverables
+- Updated settings.py (ALLOWED_HOSTS, and CORS only if needed).
+- Restored stock_risk_engine/__init__.py.
+- Optional admin status APIs, serializers and URLs if chosen.
+- Updated Postman collection and README "Testing with Flutter" section.
+
+5.8 Phase 10 acceptance checks
+- From the Android emulator, GET http://10.0.2.2:8000/api/accounts/me/ returns 401 (not 400).
+- From a phone on the same Wi-Fi, login succeeds.
+- From Flutter web on port 3000, requests are not blocked by CORS.
+- The Postman collection still passes.
 
 ======================================================================
-6. PHASE 2 — CORE APP AND PROJECT INFRASTRUCTURE
+6. PHASE 11 — FLUTTER TEST CLIENT
 ======================================================================
 
-Goal:
-- Build shared components that every later app can reuse.
-- Make the project reproducible on a new machine.
-- Depends on successful completion of Phase 1A.
+Goal: a simple, clean Flutter app that exercises every investor and analyst feature and the admin dashboards, designed for phones first.
 
-6.1 Requirements and dependency management
-- Create requirements/base.txt containing the main runtime dependencies:
-  - Django.
-  - djangorestframework.
-  - PyJWT.
-  - psycopg.
-  - python-dotenv.
-  - django-cors-headers.
-  - redis.
-  - celery.
-  - pandas.
-  - numpy.
-  - scikit-learn.
-  - joblib.
-  - XGBoost or LightGBM only if the final model-library decision requires it.
-- Create requirements/development.txt:
-  - Includes base requirements.
-  - Adds pytest.
-  - Adds pytest-django.
-  - Adds factory-boy.
-  - Adds coverage.
-- Create requirements/production.txt:
-  - Includes base requirements.
-  - Adds gunicorn.
-- The exact database driver and dependency choices should remain consistent with the project's selected implementation and requirements.
+6.1 Project setup
+- Separate repository, for example stock_risk_engine_flutter.
+- Packages:
+  - dio: HTTP requests and interceptors.
+  - flutter_secure_storage: store access and refresh tokens.
+  - provider: app state (logged-in user, role).
+  - go_router: navigation and role-based redirects.
+  - fl_chart: price charts.
+  - intl: number, currency and date formatting.
+- Base URL passed at run time:
+  - flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
+- Android debug builds: android:usesCleartextTraffic="true" so plain HTTP works during testing.
 
-6.2 Split Django settings
-- Move environment-dependent values out of hard-coded settings.
-- Read the following from environment variables:
-  - DEBUG.
-  - ALLOWED_HOSTS.
-  - CORS allowed origins.
-  - Database configuration.
-  - Secret keys and other environment-specific credentials.
-- Update all entry points to use the correct settings module:
-  - manage.py.
-  - WSGI.
-  - ASGI.
-  - Celery.
+6.2 Suggested folder structure
+- lib/main.dart
+- lib/config/api_config.dart
+- lib/core/api_client.dart (dio, interceptors)
+- lib/core/token_storage.dart
+- lib/core/api_response.dart (status, message, data, errors)
+- lib/models/ (user, portfolio, holding, price, dashboard, risk, forecast)
+- lib/services/ (auth, portfolio, holding, market, analytics, dashboard, users)
+- lib/screens/common/, lib/screens/investor/, lib/screens/analyst/, lib/screens/admin/
+- lib/widgets/ (risk badge, direction badge, stat card, money text, error view, empty view, loading view)
 
-6.3 Shared core app files
-- core/permissions.py:
-  - IsAdminRole.
-  - IsOwner.
-  - IsAssignedAnalyst.
-  - IsOwnerOrAssignedAnalystOrAdmin.
-  - Use a get_owner(obj) hook so the same permission logic can support:
-    - Portfolio ownership through obj.user.
-    - Holding ownership through obj.portfolio.user.
-- core/pagination.py:
-  - Create StandardPagination.
-  - Default page size: 20.
-  - Maximum page size: 100.
-  - Use page-number pagination.
-- core/exceptions.py:
-  - Create a custom DRF exception handler.
-  - Return the platform's standard error response shape.
-  - Log server-side 5xx errors through ApplicationLogger.
-- core/throttles.py:
-  - LoginRateThrottle.
-  - RegisterRateThrottle.
-  - MarketRefreshThrottle.
-  - Use the configured default cache so Redis backs the throttle counters.
-- core/cache.py:
-  - Centralize cache-key generation.
-  - Provide cache invalidation helpers for portfolio summaries and risk summaries.
-  - Avoid scattering cache-key strings across multiple apps.
+6.3 Authentication and session
+- Login screen accepts username or email and password.
+- Save both tokens in flutter_secure_storage.
+- Read user.role from the login response and open the matching home screen.
+- Attach Authorization: Bearer <access> to every request.
+- On 401:
+  - Call /api/accounts/token/refresh/ once.
+  - Save the new access token and retry the original request.
+  - If refresh fails, clear tokens and go to Login.
+- Logout:
+  - POST /api/accounts/logout/ with the refresh token.
+  - Clear storage and go to Login.
+- After change password, save the new token pair from the response.
 
-6.4 Redis database separation
-- The requirements PDF places the application cache and Celery broker on the same Redis database.
-- This creates an operational risk:
-  - Flushing the cache could also remove queued Celery tasks.
-  - Refresh-token blacklist entries could also be lost if they share the same database.
-- Recommended separation:
-  - Redis DB 0: Celery broker.
-  - Redis DB 1: Celery task results.
-  - Redis DB 2: application cache.
-  - Keep refresh-token blacklist storage isolated from cache-flush operations.
-- Configure each Redis connection explicitly.
+6.4 Screens — common
+- Splash: check stored tokens, call /api/accounts/me/, route by role.
+- Login: POST /api/accounts/login/.
+- Register: POST /api/accounts/register/ (creates an investor).
+- Profile: GET and PATCH /api/accounts/me/.
+- Change password: POST /api/accounts/change-password/.
 
-6.5 Celery configuration
-- Complete the working Celery setup from Phase 1A.
-- Set CELERY_TIMEZONE.
-- Add a placeholder CELERY_BEAT_SCHEDULE.
-- Add task-failure logging:
-  - Include task name.
-  - Include task arguments.
-  - Include relevant ticker or holding identifiers where applicable.
-- Add a simple ping task to verify that the worker is operating.
-- Decide where the Beat schedule is maintained:
-  - A schedule dictionary in Django settings, or
-  - django-celery-beat, if schedules need to be edited through Django admin.
+6.5 Screens — investor
+- Investor home (dashboard): GET /api/dashboard/investor/.
+- Portfolio list: GET /api/portfolios/ with pull-to-refresh and paging.
+- Create / edit portfolio form: POST /api/portfolios/, PATCH /api/portfolios/{id}/.
+- Delete portfolio with confirmation: DELETE /api/portfolios/{id}/.
+- Portfolio detail:
+  - GET /api/portfolios/{id}/summary/
+  - GET /api/analytics/portfolio/{id}/risk-summary/
+- Add / edit holding form: POST /api/portfolios/{id}/holdings/, PATCH /api/holdings/{id}/.
+- Delete holding with confirmation: DELETE /api/holdings/{id}/.
+- Holding detail:
+  - GET /api/holdings/{id}/
+  - GET /api/analytics/holdings/{id}/risk/
+  - GET /api/analytics/holdings/{id}/forecast/
+  - GET /api/dashboard/holdings/{id}/trend/ (line chart with buy price marker)
+- Stock lookup:
+  - GET /api/market/prices/{ticker}/
+  - GET /api/market/prices/{ticker}/history/
 
-6.6 Phase 2 completion criteria
-- A new virtual environment can install the project using:
-  - pip install -r requirements/development.txt
-- Celery Worker starts.
-- Celery Beat starts.
-- The ping task executes and returns successfully. Provide the command to check the ping for celery.
-- A login request exceeding its throttle limit returns HTTP 429.
-- API errors use the standard response shape.
-- Settings work through the intended environment-specific modules.
+6.6 Screens — analyst
+- Analyst home (dashboard): GET /api/dashboard/analyst/ (clients, high-risk holdings).
+- Client portfolios: GET /api/portfolios/ (only assigned investors), read-only.
+- Portfolio detail and holding detail: same as investor but without add, edit or delete buttons.
+- Actions on holding detail:
+  - Recompute prediction: POST /api/analytics/holdings/{id}/recompute/, then poll the task status.
+  - Refresh prices: POST /api/market/refresh/{ticker}/.
 
-======================================================================
-7. PHASE 3 — MARKET_DATA APP
-======================================================================
+6.7 Screens — admin
+- Admin home (dashboard): GET /api/dashboard/admin/ (user counts, totals, latest price date, models in use).
+- Users list: GET /api/accounts/users/.
+- Edit user: PATCH /api/accounts/users/{id}/ to change role or assigned analyst.
+- All portfolios: GET /api/portfolios/ (admin sees all).
+- Datasets and ML Training:
+  - Shown as an "Open in browser" link to /datasets/ and /ml/.
+  - Uploads and training are done in the Django web pages.
 
-Goal:
-- Store, backfill, refresh, and serve ticker-level market data.
-- Depends on Phase 2.
+6.8 Design rules for the Flutter pages
+- Material 3, one seed colour, light and dark themes.
+- Designed for phone width first; content stays readable on tablets and in Chrome.
+- Bottom navigation per role:
+  - Investor: Home, Portfolios, Stocks, Profile.
+  - Analyst: Home, Clients, Profile.
+  - Admin: Home, Users, Portfolios, Profile.
+- The same colours as the web pages:
+  - Risk: low green, medium amber, high red, not rated grey.
+  - Direction: up green, down red.
+  - Never colour alone: always show the label text too.
+- Money shown with two decimals and a currency symbol; gains green with +, losses red with −.
+- Every screen has loading, empty, error (with Retry) and success states.
+- Pull-to-refresh on lists and dashboards; infinite scroll using the next link.
+- Forms show the API's field errors under each field.
+- Destructive actions ask for confirmation.
+- ML outputs show the confidence and the model version, with the disclaimer that predictions are not financial advice.
+- Read-only screens for analysts hide edit buttons instead of showing errors.
 
-7.1 PriceHistory model
-- Create a PriceHistory model with:
-  - ticker:
-    - CharField.
-    - Store ticker symbols in uppercase.
-    - Indexed for lookup.
-  - date:
-    - DateField.
-    - Represents the trading date.
-  - open_price:
-    - DecimalField with 12 digits and 4 decimal places.
-  - high_price:
-    - DecimalField with 12 digits and 4 decimal places.
-  - low_price:
-    - DecimalField with 12 digits and 4 decimal places.
-  - close_price:
-    - DecimalField with 12 digits and 4 decimal places.
-  - volume:
-    - BigIntegerField.
-    - BigInteger is required because some S&P 500 trading volumes exceed the 32-bit integer range.
-- Add database constraints and indexes:
-  - UniqueConstraint on ticker and date.
-  - Index on ticker and date.
-- The unique constraint makes ingestion idempotent and prevents duplicate ticker/date records.
-- Do not create a foreign key from PriceHistory to Holding.
-  - Price history is shared by all investors holding the same ticker.
+6.9 Sub-phases
+- 11A: project setup, API client, token storage, login, register, splash, role routing, logout.
+- 11B: investor dashboard, portfolios, holdings, forms, holding detail with chart, stock lookup.
+- 11C: analyst dashboard, client portfolios, recompute and refresh actions with task polling.
+- 11D: admin dashboard, users list and role/assignment editing.
+- 11E: polish (themes, empty and error states), test on emulator, phone and Chrome.
 
-7.2 Historical market-data backfill
-- Dataset identified in the plan:
-  - Kaggle dataset: "S&P 500 Stocks, Daily Historical Data (10 Years)".
-  - One CSV file per ticker, for example AAPL.csv.
-  - Expected historical period: 2015–2025.
-- Create a management command:
-  - python manage.py load_price_history <folder> [--tickers AAPL,MSFT]
-- Command responsibilities:
-  - Read CSV files using pandas.
-  - Derive ticker from the CSV filename.
-  - Rename source columns to the model's field names.
-  - Remove invalid or malformed rows.
-  - Insert rows using bulk_create.
-  - Use batch_size=5000.
-  - Use ignore_conflicts=True so rerunning the loader does not duplicate existing ticker/date records.
-  - Log inserted/skipped counts per ticker.
-- Verify the source CSV files contain Volume.
-- The PDF's dataset description lists Date, Open, High, Low, and Close but does not explicitly list Volume.
-- If Volume is unavailable:
-  - Decide whether volume should be nullable, or
-  - Remove volume-dependent features from the ML plan.
-- Do not assume Volume exists until the downloaded files are inspected.
-
-7.3 Live market-data provider
-- The requirements PDF does not identify a live daily-price provider.
-- Kaggle historical data ends in 2025, so a provider is needed for later dates.
-- Candidate providers mentioned in the plan include yfinance and Alpha Vantage.
-- Keep provider-specific code isolated:
-  - Create market_data/services/provider.py.
-  - Expose a consistent function that returns a pandas DataFrame.
-  - Celery tasks should call this abstraction, not provider-specific code directly.
-- This makes it possible to replace the provider without rewriting ingestion tasks.
-- Final provider choice is an open decision (D1).
-
-7.4 Celery tasks for market data
-- fetch_daily_prices:
-  - Scheduled through Celery Beat.
-  - Runs daily after the US market closes.
-  - Collects distinct tickers from existing Holdings plus any configured seed list.
-  - Fetches dates later than the latest stored date for each ticker.
-  - Inserts new price rows.
-  - Invalidates portfolio summary caches affected by updated tickers.
-- refresh_single_ticker:
-  - Triggered by the market refresh API.
-  - Also triggered when a new holding is added for a ticker without recent price data.
-  - Retries with backoff when the provider fails.
-  - Logs the ticker and error.
-- External market-provider calls must not run synchronously inside an API request.
-
-7.5 Market-data API endpoints
-- GET /api/market/prices/{ticker}/
-  - Access: any authenticated user.
-  - Returns the latest stored price row for the ticker.
-  - Returns 404 when no price row exists.
-- GET /api/market/prices/{ticker}/history/
-  - Access: any authenticated user.
-  - Returns the ticker's OHLCV history.
-  - Supports start and end date query parameters.
-  - Results are paginated.
-- POST /api/market/refresh/{ticker}/
-  - Access: Analyst and Admin.
-  - Queues refresh_single_ticker.
-  - Returns HTTP 202 and a task_id.
-  - Protected by per-user throttling.
-
-7.6 Shared market-data selectors
-- Create market_data/selectors.py.
-- Implement latest_price(ticker):
-  - Returns the latest price row for one ticker.
-- Implement latest_prices(tickers):
-  - Retrieves latest prices for multiple tickers in one query.
-  - Returns a dictionary suitable for reuse by other apps.
-- Portfolios and Analytics should reuse these selectors instead of implementing separate price lookups.
-
-7.7 Phase 3 tests and completion criteria
-- CSV loader can be run repeatedly without creating duplicates.
-- Unique ticker/date constraint is enforced.
-- Latest-price endpoint returns the correct latest row.
-- History endpoint returns correct rows.
-- Date-range validation works.
-- Investor receives 403 when trying to refresh a ticker.
-- Analyst can queue a refresh and receives 202.
-- Excessive refresh requests return 429.
-- Ingestion task is tested with a mocked provider.
-- Ten years of S&P 500 data is loaded.
-- Refresh task successfully writes newly fetched rows.
+6.10 Phase 11 acceptance checks
+- The full Postman journey can be repeated in the app: register, promote, assign, create portfolio, add holding, see risk and forecast, analyst read-only view, token expiry and refresh, logout.
+- Investors cannot see other investors' data; analysts cannot edit; admin-only screens are hidden from other roles.
+- The app works on the Android emulator, a physical phone and Chrome.
 
 ======================================================================
-8. PHASE 4 — PORTFOLIOS APP
+7. PHASE 12 — DEPLOYMENT
 ======================================================================
 
-Goal:
-- Implement portfolios and holdings.
-- Enforce role-based and object-level access.
-- Depends on Phase 2 and Phase 3.
+7.1 Containers
+- Dockerfile for the Django app (Gunicorn is already in requirements.txt).
+- docker-compose.yml services:
+  - web: gunicorn stock_risk_engine.wsgi
+  - worker: celery -A stock_risk_engine worker
+  - beat: celery -A stock_risk_engine beat
+  - db: PostgreSQL
+  - redis: Redis
+- Shared volumes:
+  - ml_models: written by the worker during training, read by the web app and worker.
+  - media: written by the web app on upload, read by the worker during import.
+  - postgres data volume.
+- Health checks for db, redis and web.
 
-8.1 Portfolio model
-- Create Portfolio with:
-  - user:
-    - ForeignKey to accounts.User.
-    - on_delete=CASCADE.
-    - related_name="portfolios".
-    - Indexed.
-  - name:
-    - Required CharField.
-    - May optionally be unique per user.
-  - description:
-    - Optional TextField.
-  - created_at:
-    - DateTimeField with auto_now_add=True.
-  - updated_at:
-    - DateTimeField with auto_now=True.
+7.2 Settings needed when the app is reachable from other machines
+- DEBUG, ALLOWED_HOSTS and CORS origins read from .env instead of fixed values.
+- STATIC_ROOT and collectstatic; static files served by WhiteNoise or a reverse proxy.
+- HTTPS through a reverse proxy before any real users.
+- The Flutter release build uses the deployed HTTPS base URL.
+- Only needed if the project goes beyond local testing; local development keeps DEBUG = True.
 
-8.2 Holding model
-- Create Holding with:
-  - portfolio:
-    - ForeignKey to Portfolio.
-    - on_delete=CASCADE.
-    - related_name="holdings".
-    - Indexed.
-  - ticker:
-    - CharField.
-    - Normalise to uppercase.
-    - Indexed for joining to PriceHistory by ticker.
-  - quantity:
-    - DecimalField.
-    - Must be greater than zero.
-  - buy_price:
-    - DecimalField.
-    - Must be greater than zero.
-  - buy_date:
-    - DateField.
-    - Must not be in the future.
-  - risk_label:
-    - Nullable field with Low, Medium, and High choices.
-    - Written by Analytics, not by the client.
-  - risk_score:
-    - Nullable FloatField.
-    - Stores the probability/confidence associated with the predicted risk class.
-  - predicted_direction:
-    - Nullable field with Up and Down choices.
-    - Written by Analytics, not by the client.
-  - prediction_confidence:
-    - Nullable FloatField.
-  - last_predicted_at:
-    - Nullable DateTimeField.
-  - model_version:
-    - CharField.
-    - Required by the model-versioning requirements in PDF section 12.7.
-    - Missing from the Holding table description in PDF section 6.4, so this is a documented design addition.
-    - Consider separate risk-model and forecast-model version fields if the two models need independent version tracking.
-  - created_at:
-    - DateTimeField with auto_now_add=True.
-  - updated_at:
-    - DateTimeField with auto_now=True.
-
-8.3 Role-scoped querysets
-- Apply data scoping inside get_queryset(), not only through permission checks.
-- This prevents users from discovering records they are not allowed to access.
-- If an investor requests another investor's object by ID, return 404 rather than revealing that the object exists.
-- Investor queryset:
-  - Portfolio.objects.filter(user=request.user)
-- Analyst queryset:
-  - Portfolio.objects.filter(user__assigned_analyst=request.user)
-  - Analyst access is read-only.
-- Admin queryset:
-  - Portfolio.objects.all()
-- Holding querysets must follow the same ownership rules through portfolio__user.
-
-8.4 Serializers
-- PortfolioListSerializer:
-  - id.
-  - name.
-  - description.
-  - created_at.
-  - holdings_count, obtained through annotation.
-  - total_value.
-- PortfolioDetailSerializer:
-  - All PortfolioListSerializer fields.
-  - Owner represented through a minimal user serializer.
-  - Nested holdings.
-- HoldingSerializer:
-  - id.
-  - ticker.
-  - quantity.
-  - buy_price.
-  - buy_date.
-  - current_price from the latest PriceHistory row.
-  - Risk and forecast fields.
-  - ML output fields must be read-only.
-- A client must not be able to submit or modify risk scores, risk labels, direction predictions, or prediction confidence through normal Holding create/update requests.
-
-8.5 Portfolio and holding API endpoints
-- GET /api/portfolios/
-  - Access: Investor, Analyst, Admin.
-  - Returns the role-scoped portfolio list.
-- POST /api/portfolios/
-  - Access: Investor and Admin.
-  - Creates a portfolio.
-- GET /api/portfolios/{id}/
-  - Access: owner, assigned Analyst, Admin.
-  - Returns portfolio details.
-- PATCH /api/portfolios/{id}/
-  - Access: owner and Admin.
-  - Updates a portfolio.
-- DELETE /api/portfolios/{id}/
-  - Access: owner and Admin.
-  - Deletes a portfolio.
-- GET /api/portfolios/{id}/summary/
-  - Access: owner, assigned Analyst, Admin.
-  - Returns the cached portfolio summary.
-- GET /api/portfolios/{id}/holdings/
-  - Access: owner, assigned Analyst, Admin.
-  - Lists holdings.
-- POST /api/portfolios/{id}/holdings/
-  - Access: owner and Admin.
-  - Adds a holding.
-- GET /api/holdings/{id}/
-  - Access: owner, assigned Analyst, Admin.
-  - Returns one holding.
-- PATCH /api/holdings/{id}/
-  - Access: owner and Admin.
-  - Updates a holding.
-- DELETE /api/holdings/{id}/
-  - Access: owner and Admin.
-  - Deletes a holding.
-- Implementation approach specified in the plan:
-  - ModelViewSet.
-  - DefaultRouter.
-  - @action(detail=True) for portfolio summary and nested holdings actions.
-
-8.6 Business rules
-- Analysts cannot create, update, or delete portfolios or holdings.
-- Decide how an Admin-created portfolio is assigned an owner:
-  - One proposed approach is to accept an optional user_id only for Admin requests.
-  - This is an open decision (D4).
-- When a holding is added for a ticker without recent price data:
-  - Queue refresh_single_ticker.
-  - Do not call the provider from the request.
-- Portfolio summary must calculate:
-  - Total cost.
-  - Current value.
-  - Unrealised gain/loss amount.
-  - Unrealised gain/loss percentage.
-  - Value of each holding.
-  - Number of holdings.
-  - Counts of Low, Medium, and High risk labels.
-- Cache portfolio summaries in Redis for approximately five minutes.
-- Invalidate the summary cache when:
-  - A holding is created.
-  - A holding is updated.
-  - A holding is deleted.
-  - Price ingestion changes a relevant ticker's data.
-  - ML recomputation changes a holding's risk/forecast fields.
-- Query optimization:
-  - Use select_related for Holding -> Portfolio -> User.
-  - Use prefetch_related for portfolio holdings.
-  - Use annotations for counts.
-  - Use one batched latest-price lookup per portfolio.
-  - Avoid N+1 database queries.
-
-8.7 Phase 4 tests and completion criteria
-- Investor A cannot read or modify Investor B's portfolio by ID.
-- Investor A cannot read or modify Investor B's holding by ID.
-- Analyst sees only portfolios of assigned investors.
-- Analyst cannot write to portfolios or holdings.
-- Admin can access all portfolios and holdings.
-- Client-supplied ML fields are ignored or rejected as read-only.
-- Portfolio summary arithmetic is correct.
-- Cache hits return the cached result.
-- Cache invalidation works after relevant changes.
-- Unknown ticker causes a refresh task to be queued.
-- Query-count tests detect and prevent N+1 regressions.
-- Every endpoint in PDF section 9.2 works.
-- Every relevant row of the role/permission matrix in PDF section 8 has a passing test.
+7.3 Phase 12 acceptance checks
+- docker compose up starts all five services.
+- Upload, training and predictions work end to end in containers.
+- The Flutter app works against the deployed URL.
 
 ======================================================================
-9. PHASE 5 — ML RESEARCH AND MODEL TRAINING
+8. PHASE 13 — FUTURE SCOPE
 ======================================================================
 
-Goal:
-- Build, validate, and save the two ML models before connecting them to API serving.
-- Depends on Phase 3, because historical PriceHistory data must be available.
-- Can run in parallel with Phase 4.
-
-9.1 Analytics code layout
-- feature_engineering.py:
-  - Builds model input features from historical price data.
-- labels.py:
-  - Creates target labels for risk classification and direction forecasting.
-- training/train_risk.py:
-  - Trains and evaluates the risk classifier.
-- training/train_forecast.py:
-  - Trains and evaluates the direction classifier.
-- registry.py:
-  - Loads the current model and its version.
-- Store saved models as .joblib files.
-- Keep model files in a git-ignored directory.
-- Store a metadata JSON file next to each model.
-- Use the existing @log_execution_time decorator around training functions.
-
-9.2 Features to engineer
-- Daily return.
-- Rolling volatility over 30 trading days.
-- Rolling volatility over 90 trading days.
-- Maximum drawdown over a trailing window.
-- 20-day moving average.
-- 50-day moving average.
-- Price-to-moving-average ratios.
-- Relative Strength Index (RSI) over 14 periods.
-- Volume trend, for example:
-  - 20-day average volume divided by 90-day average volume.
-- Holding-level features proposed in the requirements:
-  - Holding age in days.
-  - Unrealised gain/loss percentage.
-
-9.3 Important training-data limitation
-- Historical ticker price data does not contain investor-specific buy dates or buy prices.
-- Therefore, it cannot directly provide the two proposed holding-level features for historical training rows.
-- Decision D5 must be made:
-  - Option 1: train using ticker-level features only, and calculate/show holding-level features alongside predictions at inference time.
-  - Option 2: simulate buy dates and buy prices to create synthetic holding-level training examples.
-- The implementation plan recommends Option 1 because it is simpler to explain and avoids introducing simulated holding data into model training.
-
-9.4 Model 1 — Risk classifier
-- Objective:
-  - Classify a holding/ticker into Low, Medium, or High risk.
-- Target creation:
-  - Derive risk labels from future realised-volatility buckets.
-  - Example approach: divide future realised volatility into three buckets using terciles.
-  - Fix the future window and bucket thresholds for every model version.
-- Main model:
-  - RandomForestClassifier.
-- Baseline model:
-  - Scaled LogisticRegression.
-- Output fields:
-  - risk_label: predicted Low, Medium, or High class.
-  - risk_score: probability associated with the predicted class.
-- Evaluation:
-  - Precision per class.
-  - Recall per class.
-  - F1-score per class.
-  - Confusion matrix.
-  - Saved feature importances.
-- Compare Random Forest performance with the Logistic Regression baseline.
-- If Random Forest does not outperform the baseline, document the result rather than hiding it.
-
-9.5 Model 2 — Next-day direction forecaster
-- Objective:
-  - Predict whether the next trading day's closing price will be higher or lower than today's close.
-- Target:
-  - 1 when the next trading day's close is above today's close.
-  - 0 otherwise.
-- Model:
-  - Gradient Boosting classifier.
-- The requirements document is inconsistent about the library:
-  - One section specifies scikit-learn.
-  - Another mentions XGBoost or LightGBM.
-- Recommendation in the implementation plan:
-  - Start with scikit-learn HistGradientBoostingClassifier.
-  - Add XGBoost only if testing demonstrates a measurable improvement.
-- Output fields:
-  - predicted_direction: Up or Down.
-  - prediction_confidence: confidence/probability for the predicted direction.
-- Evaluation:
-  - Accuracy.
-  - F1-score.
-  - ROC-AUC.
-  - Compare against simple baselines:
-    - Always predict Up.
-    - Repeat the previous day's direction.
-- Set realistic expectations:
-  - Around 50–55% accuracy can be normal for next-day stock-direction prediction.
-  - Report results honestly; do not present accuracy alone as proof of a useful trading model.
-
-9.6 Training and validation methodology
-- Use chronological data splits only.
-- Do not randomly shuffle time-series observations.
-- Example split:
-  - Training: 2015–2022.
-  - Validation: 2023.
-  - Testing: 2024–2025.
-- Features for a given date must use only information available on or before that date.
-- Avoid look-ahead leakage.
-- Drop the first approximately 90 rows per ticker where rolling windows do not yet have enough history.
-- Version models with descriptive identifiers, for example:
-  - risk-rf-2026.10.14-01
-- Save metadata containing:
-  - Training window.
-  - Feature list.
-  - Label thresholds.
-  - Evaluation metrics.
-  - Model version.
-
-9.7 Model training command
-- Create:
-  - python manage.py train_models
-- Support:
-  - --model risk
-  - --model forecast
-  - --model all
-- The command should train the selected model or models and save model files and metrics metadata.
-
-9.8 Phase 5 completion criteria
-- Both models train from data stored in PostgreSQL.
-- A metrics report is saved.
-- Models can be loaded by version through the registry.
-- Random Forest is compared with Logistic Regression.
-- Direction forecasting is compared with the specified baselines.
-- Any model that does not beat its baseline is documented accurately.
+- Push notifications with Firebase Cloud Messaging when a risk label changes (needs device tokens and the previous label).
+- Live price updates with Django Channels / WebSockets instead of polling.
+- Sector analytics: ticker-to-sector lookup, sector exposure, diversification score.
+- Rebalancing suggestions from portfolio composition and risk scores.
+- LSTM forecasting as a comparison against Gradient Boosting.
+- Choosing an older model version as active from the Model versions page.
 
 ======================================================================
-10. PHASE 6 — ANALYTICS APP AND ML SERVING
+9. CELERY TASK SCHEDULE AND EXECUTION ORDER
 ======================================================================
 
-Goal:
-- Run trained models against actual holdings.
-- Store prediction outputs on Holding.
-- Expose those outputs through read-only APIs.
-- Depends on Phase 4 and Phase 5.
-
-10.1 Inference service
-- Implement analytics/services/predict.py.
-- For each holding:
-  - Retrieve the required historical price data.
-  - Build the latest feature row.
-  - Load the current risk and forecast model versions.
-  - Generate risk and direction predictions.
-  - Write only the ML output fields onto the Holding record.
-- Use bulk_update where appropriate for multiple holdings.
-- Set the relevant prediction timestamp and model version.
-- Invalidate portfolio-summary and risk-summary caches for affected portfolios.
-- If a holding does not have enough price history:
-  - Leave its ML fields empty.
-  - Log the reason.
-  - Do not generate an unreliable prediction.
-
-10.2 Celery tasks
-- recompute_holding_risk:
-  - Trigger: Celery Beat, nightly after price ingestion.
-  - Responsibility: update risk_label and risk_score for eligible holdings.
-- recompute_holding_forecast:
-  - Trigger: Celery Beat, nightly after price ingestion.
-  - Responsibility: update predicted_direction and prediction_confidence.
-- recompute_single_holding:
-  - Trigger: POST recompute endpoint.
-  - Responsibility: recompute both models for one holding.
-- retrain_models:
-  - Trigger: Celery Beat, weekly or monthly.
-  - Responsibility: retrain both models and register the new model version.
-- Price ingestion must finish before prediction tasks execute.
-- Two scheduling approaches are identified:
-  - Leave enough time between the price-ingestion and prediction Beat schedules.
-  - Chain the tasks so fetch_daily_prices completes before risk and forecast tasks begin.
-
-10.3 Analytics serializers
-- HoldingRiskSerializer:
-  - risk_label.
-  - risk_score.
-  - last_predicted_at.
-  - model_version.
-- HoldingForecastSerializer:
-  - predicted_direction.
-  - prediction_confidence.
-  - last_predicted_at.
-  - model_version.
-- RiskSummarySerializer:
-  - portfolio_id.
-  - total_value.
-  - risk_distribution containing Low, Medium, and High counts.
-  - average_confidence.
-
-10.4 Analytics API endpoints
-- GET /api/analytics/holdings/{id}/risk/
-  - Access: owner, assigned Analyst, Admin.
-  - Returns the holding's risk output.
-- GET /api/analytics/holdings/{id}/forecast/
-  - Access: owner, assigned Analyst, Admin.
-  - Returns the holding's forecast output.
-- POST /api/analytics/holdings/{id}/recompute/
-  - Access: assigned Analyst and Admin.
-  - Queues recomputation.
-  - Returns HTTP 202 with task_id.
-- GET /api/analytics/portfolio/{id}/risk-summary/
-  - Access: owner, assigned Analyst, Admin.
-  - Returns cached portfolio risk distribution and related summary values.
-- Optional:
-  - GET /api/analytics/tasks/{task_id}/
-  - Allows a client to poll background-task status.
-
-10.5 Permissions and query reuse
-- Reuse the role-scoped querysets from Phase 4.
-- Apply the same ownership and assigned-analyst restrictions.
-- Investor cannot trigger recomputation.
-- An analyst assigned to a different investor must not access the holding; the plan expects 404 for an out-of-scope object.
-
-10.6 Phase 6 tests and completion criteria
-- Tasks update only the intended ML fields.
-- Risk labels are valid: Low, Medium, or High.
-- Direction labels are valid: Up or Down.
-- Probabilities/confidence values remain between 0 and 1.
-- Model version is stored.
-- Investor receives 403 when attempting recomputation.
-- Analyst assigned to another investor receives 404 for an out-of-scope holding.
-- Cache invalidation works after recomputation.
-- Risk-summary calculations are correct.
-- Nightly tasks populate ML fields for holdings with sufficient price history.
-- Risk and forecast endpoints return the stored predictions.
-- Single-holding recomputation works on demand.
+- core.tasks.ping: every 15 minutes.
+- market_data.tasks.fetch_daily_prices: Monday to Friday 22:00 UTC.
+- analytics.tasks.recompute_holding_risk: Monday to Friday 23:00 UTC.
+- analytics.tasks.recompute_holding_forecast: Monday to Friday 23:15 UTC.
+- ml_training.tasks.retrain_models: Sunday 02:00 UTC.
+- On demand:
+  - market_data.tasks.refresh_single_ticker (refresh API, new holding).
+  - market_data.tasks.import_dataset_upload (Datasets page).
+  - analytics.tasks.recompute_single_holding (recompute API).
+  - ml_training.tasks.run_training (ML Training page).
+- Order: prices arrive first, predictions run after prices, retraining runs weekly when markets are closed.
 
 ======================================================================
-11. PHASE 7 — DASHBOARDS AND ROLE-BASED VIEWS
+10. OPEN DECISIONS
 ======================================================================
 
-Goal:
-- Provide aggregated information for each user role.
-- Depends on Phase 6.
-
-11.1 Investor dashboard
-- Aggregate data through the investor's portfolios and holdings.
-- Display:
-  - Portfolio count.
-  - Holding count.
-  - Total portfolio value.
-  - Gain/loss.
-  - Risk-label counts across portfolios.
-
-11.2 Analyst dashboard
-- Start from investors assigned to the analyst.
-- Aggregate those investors' portfolios and holdings.
-- Display:
-  - Total information per assigned client.
-  - Combined portfolio/risk totals.
-  - Combined risk-label counts.
-  - List of High-risk holdings.
-
-11.3 Admin dashboard
-- Provide a system-wide view.
-- Display:
-  - Users grouped by role.
-  - Portfolio count.
-  - Holding count.
-  - Number of tickers tracked.
-  - Last market-data ingestion time.
-  - Current model versions.
-  - Model evaluation metrics.
-  - System-wide risk counts.
-
-11.4 Ticker trends
-- Show a holding's ticker price history over a selected date range.
-- Reuse the Phase 3 market history endpoint/selectors.
-- The ticker trend is based on the shared ticker history, not a holding-specific PriceHistory table.
-
-11.5 Proposed dashboard endpoints
-- The requirements PDF includes dashboard and system-wide analytics expectations, but does not list corresponding endpoints in its API section.
-- This is an open design decision (D6).
-- Suggested endpoints:
-  - GET /api/dashboard/investor/ — Investor only.
-  - GET /api/dashboard/analyst/ — Analyst only.
-  - GET /api/dashboard/admin/ — Admin only.
-
-11.6 Dashboard implementation
-- Cache each dashboard response per user for a few minutes.
-- Invalidate dashboard cache entries when relevant portfolio caches are invalidated.
-- Extend the existing Bootstrap templates with:
-  - Role-aware dashboard.
-  - Portfolio pages.
-  - Holding detail page.
-  - Risk label display.
-  - Direction prediction and confidence display.
-  - Price chart using Chart.js.
-- Template views should reuse the same selectors and services as the API rather than duplicating business logic.
-
-11.7 Phase 7 completion criteria
-- Each role sees only the dashboard information permitted to that role.
-- Dashboard queries are optimised.
-- Query counts remain bounded rather than increasing with every portfolio or holding.
-- Analyst dashboard includes only assigned investors.
-- Admin dashboard contains system-wide information.
+- Should the Flutter admin show dataset upload and training status (optional APIs in 5.5), or only link to the web pages?
+- Is OpenAPI / Swagger documentation wanted (5.6)?
+- State management in Flutter: provider is suggested for simplicity; riverpod or bloc are alternatives.
+- Will the project be deployed beyond local testing (Phase 12), or stay local?
 
 ======================================================================
-12. PHASE 8 — SECURITY, PERFORMANCE, AND NON-FUNCTIONAL HARDENING
+11. IMMEDIATE NEXT STEPS
 ======================================================================
 
-Goal:
-- Meet the security and performance requirements in PDF section 15.
-- Some items should already have been implemented during earlier phases; this phase verifies and hardens them.
-
-12.1 Authentication and secrets
-- Passwords must be stored using Django password hashers.
-- JWT secrets must:
-  - Be configured through environment variables.
-  - Differ from one another.
-  - Differ from Django SECRET_KEY.
-  - Be different across environments.
-- Production SECRET_KEY must come only from the environment.
-- Refresh-token blacklist storage must not be lost when the application cache is flushed.
-
-12.2 Authorization and data isolation
-- Every endpoint must apply object-level access restrictions.
-- Querysets must be scoped by role and ownership.
-- Investors must not access another investor's portfolios or holdings.
-- Analysts must access only assigned investors' data.
-- Analysts must remain read-only for portfolio and holding operations.
-- Admins can access system-wide data.
-
-12.3 API protection
-- Apply throttling to:
-  - Login.
-  - Registration.
-  - Market refresh.
-- CORS must allow only configured, trusted origins.
-- All list endpoints must be paginated.
-- API errors must use the standard response format.
-
-12.4 Database and query performance
-- Ensure indexes exist on:
-  - PriceHistory(ticker, date).
-  - Holding(portfolio_id).
-  - Portfolio(user_id).
-- Use query optimisation to avoid N+1 queries.
-- Use Redis caching for heavy summary endpoints.
-- Invalidate cache entries when underlying data changes.
-
-12.5 Celery and logging
-- Log Celery task failures.
-- Include task name and arguments.
-- Include relevant ticker or holding ID.
-- Use consistent log timestamps.
-- Use a stable log path.
-- Add log rotation for app.log.
-
-12.6 Production settings
-- DEBUG must be disabled.
-- ALLOWED_HOSTS must be configured.
-- Configure SECURE_* settings and secure cookies for the template UI.
-- Load SECRET_KEY only from the environment.
-- Restrict CORS origins.
-- Run:
-  - python manage.py check --deploy
-- Resolve all deployment-check issues before release.
-
-12.7 Phase 8 completion criteria
-- Authentication and authorization rules are enforced.
-- Secrets are configured safely.
-- Every list endpoint is paginated.
-- Throttles work.
-- Redis responsibilities are isolated.
-- Logs are consistent and rotated.
-- Database indexes and query optimisation are in place.
-- Production deployment checks pass.
-
-======================================================================
-13. PHASE 9 — TESTING, API DOCUMENTATION, AND END-TO-END VERIFICATION
-======================================================================
-
-Goal:
-- Verify that the complete platform behaves according to the requirements.
-- Unit and app-level tests should already have been written during each phase.
-- This phase focuses on integrated system behaviour.
-
-13.1 Testing tools
-- Use pytest.
-- Use pytest-django.
-- Use factory-boy for test data factories.
-- Use coverage to measure test coverage.
-- A suggested target is 80% coverage of application code.
-
-13.2 Permission-matrix testing
-- Create parametrised tests for the permission matrix in PDF section 8.
-- Cover all three roles:
-  - Investor.
-  - Analyst.
-  - Admin.
-- Verify every relevant permission-matrix row.
-- Include ownership and assigned-analyst boundaries.
-
-13.3 Celery tests
-- Use CELERY_TASK_ALWAYS_EAGER where appropriate for tests.
-- Mock the market-data provider.
-- Verify task behaviour without making real external provider calls.
-- Test task results, database writes, failures, and cache invalidation.
-
-13.4 ML feature tests
-- Use a small known price series.
-- Test:
-  - RSI.
-  - Maximum drawdown.
-  - Moving averages.
-  - Other engineered features.
-- Verify no look-ahead leakage:
-  - Features calculated for day t must not change when later price rows are added.
-
-13.5 End-to-end test
-- Test the full user journey:
-  1. Investor registers.
-  2. Investor logs in.
-  3. API returns access and refresh tokens.
-  4. Investor creates a portfolio.
-  5. Investor adds a holding.
-  6. Price refresh is queued when required.
-  7. Price data is stored.
-  8. ML tasks calculate risk and direction outputs.
-  9. Investor requests portfolio summary.
-  10. Assigned Analyst views the portfolio read-only.
-  11. Access token expires.
-  12. Client refreshes the access token.
-  13. Logout blacklists the refresh token.
-
-13.6 Postman and API documentation
-- Maintain a Postman collection in the repository.
-- Include automatic token refresh in the collection.
-- The collection should run through the main API workflow.
-- Optional: use drf-spectacular for:
-  - OpenAPI schema.
-  - Swagger UI.
-  - API documentation useful for future Flutter development.
-
-13.7 README
-- Update README to describe the actual implementation.
-- Do not document features that have not been implemented.
-- Include setup, environment, dependency installation, running services, API usage, and testing instructions consistent with the repository.
-
-13.8 Phase 9 completion criteria
-- Test suite passes.
-- Permission matrix is covered.
-- Celery tasks are tested with mocked external services.
-- ML features are checked for correctness and leakage.
-- End-to-end workflow passes.
-- Postman collection runs successfully.
-- README matches the actual code.
-
-======================================================================
-14. PHASE 10 — DEPLOYMENT READINESS AND FUTURE SCOPE
-======================================================================
-
-14.1 Docker deployment
-- Create a Dockerfile for the web service.
-- Create docker-compose.yml containing:
-  - Web service running Gunicorn.
-  - PostgreSQL.
-  - Redis.
-  - Celery worker.
-  - Celery Beat.
-- Add health checks.
-- Use an environment file appropriate to each environment.
-- Add a persistent volume for saved ML models.
-- The current .env already contains a commented DB_HOST=db example that may be relevant to Docker database networking.
-
-14.2 Future scope, in the priority order stated in the plan
-- Flutter client:
-  - Login and registration.
-  - Portfolio dashboard using the summary endpoint.
-  - Holding detail with risk and forecast information.
-  - Store tokens using flutter_secure_storage.
-- Push notifications:
-  - Use Firebase Cloud Messaging.
-  - Notify users when a risk label changes or a forecast passes a confidence threshold.
-  - Requires storing device tokens.
-  - Requires tracking the previous risk label to detect changes.
-- WebSockets:
-  - Consider Django Channels for live price updates instead of polling.
-- Sector-level analytics:
-  - Add ticker-to-sector lookup.
-  - Calculate sector-level metrics and diversification score.
-- Rebalancing suggestions:
-  - Use portfolio composition and risk scores to suggest possible adjustments.
-- LSTM forecasting:
-  - Train an LSTM model as a comparison against the Gradient Boosting model.
-
-======================================================================
-15. OPEN ARCHITECTURAL AND PRODUCT DECISIONS
-======================================================================
-
-Resolve each decision before implementing the phase it affects.
-
-D1 — Live market-data provider (Phase 3)
-- The requirements PDF does not specify a provider.
-- Kaggle historical data ends in 2025.
-- Choose a provider for daily prices after the historical dataset.
-- Candidates mentioned: yfinance or Alpha Vantage.
-- Keep the provider behind market_data/services/provider.py so it can be replaced.
-
-D2 — Gradient Boosting library (Phase 5)
-- One PDF section specifies scikit-learn.
-- Another specifies XGBoost or LightGBM.
-- The implementation plan recommends starting with scikit-learn HistGradientBoostingClassifier.
-- Add another library only if evaluation shows a measurable benefit.
-
-D3 — Model version fields (Phase 4)
-- PDF section 12.7 requires model versioning.
-- PDF section 6.4 does not include model_version in the Holding table.
-- Decide whether Holding stores one model_version or separate risk_model_version and forecast_model_version fields.
-
-D4 — Ownership of Admin-created portfolios (Phase 4)
-- Decide who owns a portfolio created by an Admin.
-- Suggested approach: allow Admin-only user_id assignment when creating the portfolio.
-- Define validation and behaviour when user_id is omitted.
-
-D5 — Holding-level ML features (Phase 5)
-- Historical market data does not include investor-specific buy dates or buy prices.
-- Decide whether to:
-  - Train on ticker-level features only and calculate holding-specific values at inference time, or
-  - Simulate buy dates and prices for historical training records.
-- The plan recommends ticker-level training as the simpler approach.
-
-D6 — Dashboard API endpoints (Phase 7)
-- Dashboard requirements exist, but the PDF API section does not list dashboard endpoints.
-- Decide whether to add the proposed investor, analyst, and admin dashboard endpoints.
-
-D7 — Environment variable naming (Phase 2)
-- Current code uses DB_*.
-- PDF uses DATABASE_*.
-- Choose one naming convention and use it consistently.
-
-D8 — Redis database layout (Phase 2)
-- PDF places cache and Celery broker on the same Redis database.
-- The plan recommends separate databases:
-  - DB 0: broker.
-  - DB 1: task results.
-  - DB 2: application cache.
-- Ensure refresh-token blacklist entries are not accidentally removed by cache flushing.
-
-D9 — API versioning (Phase 2)
-- PDF says APIs should be versioned under /api/.
-- Existing endpoint examples do not include a version segment.
-- Decide now whether to use /api/v1/ or keep /api/.
-- Apply the selected convention consistently to all endpoints and documentation.
-
-D10 — Volume availability in Kaggle CSVs (Phase 3)
-- The PDF's dataset description does not explicitly list Volume.
-- Inspect the downloaded CSVs.
-- If Volume is missing, decide whether the model field is nullable or volume-based features are removed.
-
-D11 — Scope of Bootstrap template pages
-- Decide whether every app needs Bootstrap template pages.
-- Alternative: keep template pages limited to Accounts and dashboards, with the rest of the platform accessed through APIs.
-
-D12 — App naming and data-model design
-- The design tab uses portfolio and ml_engine naming, with optional RiskScore and ForecastResult tables.
-- The requirements PDF and this implementation plan use portfolios and analytics.
-- The current plan keeps ML fields on Holding and does not add separate RiskScore or ForecastResult tables.
-- Choose one naming and data-model approach and update the other documentation to match.
-
-======================================================================
-16. CELERY TASK SCHEDULE AND EXECUTION ORDER
-======================================================================
-
-16.1 Scheduled and on-demand tasks
-- fetch_daily_prices:
-  - Trigger: Celery Beat, daily after the US market closes.
-  - App: market_data.
-  - Phase: 3.
-- refresh_single_ticker:
-  - Trigger: market refresh API or a new holding without recent prices.
-  - App: market_data.
-  - Phase: 3.
-- recompute_holding_risk:
-  - Trigger: Celery Beat, nightly after price ingestion.
-  - App: analytics.
-  - Phase: 6.
-- recompute_holding_forecast:
-  - Trigger: Celery Beat, nightly after price ingestion.
-  - App: analytics.
-  - Phase: 6.
-- recompute_single_holding:
-  - Trigger: POST recompute endpoint.
-  - App: analytics.
-  - Phase: 6.
-- retrain_models:
-  - Trigger: Celery Beat, weekly or monthly.
-  - App: analytics.
-  - Phase: 6.
-
-16.2 Required execution order
-- Market prices must be ingested before nightly ML predictions run.
-- Either:
-  - Schedule price ingestion sufficiently earlier than risk/forecast tasks, or
-  - Use Celery task chaining/grouping so ingestion completes before prediction tasks begin.
-- Do not allow prediction tasks to run against stale data merely because their scheduled times overlap.
-
-16.3 US market close and timezone
-- The US market closes at 16:00 Eastern Time.
-- This corresponds to 01:30 IST or 02:30 IST on the following day, depending on daylight saving time.
-- Write the Celery Beat schedule in UTC.
-- Configure CELERY_TIMEZONE consistently.
-- Account for daylight-saving changes rather than hard-coding one IST time throughout the year.
-
-======================================================================
-17. IMMEDIATE NEXT STEPS
-======================================================================
-
-The next development task is Phase 1A, not Phase 2.
-
-Recommended execution sequence:
-- Step 1: Fix Accounts URL routing.
-  - Separate API and web URL configurations.
-  - Correct namespaces and login redirects.
-- Step 2: Fix refresh-token access-token creation.
-- Step 3: Generate and configure distinct JWT secrets.
-- Step 4: Fix Celery settings, imports, app naming, and package loading.
-- Step 5: Fix admin self-demotion and analyst-assignment edge cases.
-- Step 6: Protect password changes and correct login validation status codes.
-- Step 7: Decide and enforce the Admin/is_staff relationship.
-- Step 8: Clean repository artefacts and secret exposure.
-- Step 9: Correct logging path and timezone.
-- Step 10: Add the Phase 1A Accounts tests.
-- Step 11: Verify runserver, template pages, all Accounts endpoints, and Celery worker startup.
-- Step 12: Only after Phase 1A passes, begin Phase 2.
-
-FINAL PROJECT SEQUENCE:
-- Complete Phase 1A.
-- Build Phase 2 shared infrastructure.
-- Build Phase 3 Market Data.
-- Build Phase 4 Portfolios.
-- Build Phase 5 ML training (can proceed alongside Phase 4 after Phase 3).
-- Build Phase 6 Analytics/ML serving.
-- Build Phase 7 dashboards.
-- Complete Phase 8 hardening.
-- Complete Phase 9 integrated testing and documentation.
-- Complete Phase 10 Docker/deployment readiness and then future enhancements.
-
-END OF IMPLEMENTATION PLAN
+1. Restore from .celery import app as celery_app in stock_risk_engine/__init__.py.
+2. Phase 10: add the Flutter test hosts to ALLOWED_HOSTS and confirm access from the emulator, a phone and Chrome on port 3000.
+3. Decide on the optional admin status APIs and OpenAPI docs.
+4. Phase 11A: create the Flutter project, API client, login and role routing.
+5. Continue Phase 11B to 11E, then Phase 12 if deploying.
