@@ -19,6 +19,10 @@ def blacklisted_refresh_token_key(jti):
     return f"blacklisted_refresh:{jti}"
 
 
+def live_quote_key(ticker):
+    return f"live_quote:{ticker}"
+
+
 def investor_dashboard_key(user_id):
     return f"dashboard:investor:{user_id}"
 

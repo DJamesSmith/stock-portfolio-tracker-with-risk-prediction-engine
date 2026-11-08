@@ -11,6 +11,7 @@ from market_data.selectors import latest_price
 from portfolios.models import Holding
 from ml_training.feature_engineering import build_ticker_features
 from ml_training.registry import load_model
+from monitoring.services import publish_risk_changes
 
 PRICE_LOOKBACK_DAYS = 400
 BULK_UPDATE_BATCH_SIZE = 500
@@ -133,6 +134,7 @@ def recompute_holdings(holdings, model_types):
 
     updated_holdings = []
     skipped_holdings = []
+    risk_changes = {}
 
     for holding in holdings:
         feature_row = feature_rows.get(holding.ticker)
@@ -143,13 +145,18 @@ def recompute_holdings(holdings, model_types):
             skipped_holdings.append({"holding_id": holding.id, "ticker": holding.ticker, "reason": reason})
             continue
 
+        previous_label = holding.risk_label
         apply_predictions(holding, feature_row, models, predicted_at)
         updated_holdings.append(holding)
+
+        if "risk" in models and holding.risk_label != previous_label:
+            risk_changes[holding.id] = previous_label
 
     if updated_holdings:
         Holding.objects.bulk_update(updated_holdings, get_update_fields(model_types), batch_size=BULK_UPDATE_BATCH_SIZE)
 
     invalidate_portfolios_cache({holding.portfolio_id for holding in updated_holdings})
+    publish_risk_changes(risk_changes)
 
     model_versions = {model_type: loaded["version"] for model_type, loaded in models.items()}
     ApplicationLogger.info(
@@ -161,4 +168,5 @@ def recompute_holdings(holdings, model_types):
         "holdings_checked": len(holdings),
         "holdings_updated": len(updated_holdings),
         "holdings_skipped": skipped_holdings,
+        "risk_changes": len(risk_changes),
     }

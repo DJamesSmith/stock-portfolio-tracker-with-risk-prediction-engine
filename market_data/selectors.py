@@ -36,6 +36,5 @@ def price_data_summary():
         rows=Count("id"),
         tickers=Count("ticker", distinct=True),
         first_date=Min("date"),
-        last_date=Max("date"),
-    )
+        last_date=Max("date"))
     return summary

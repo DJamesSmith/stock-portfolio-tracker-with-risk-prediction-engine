@@ -4,6 +4,7 @@ from celery import shared_task
 from django.utils import timezone
 
 from core.application_logger import ApplicationLogger
+from monitoring.services import publish_daily_price
 from .models import DatasetUpload
 from .selectors import latest_price, tracked_tickers
 from .services.dataset_upload import import_dataset_upload
@@ -51,6 +52,7 @@ def fetch_daily_prices():
 
         if inserted > 0:
             updated_tickers.append(ticker)
+            publish_daily_price(ticker)
 
     ApplicationLogger.info(
         f"fetch_daily_prices finished: checked={len(tickers)}, updated={len(updated_tickers)}, failed={len(failed_tickers)}"
@@ -75,6 +77,9 @@ def refresh_single_ticker(self, ticker):
             f"retry_in={wait_seconds}s, error={error}"
         )
         raise self.retry(exc=error, countdown=wait_seconds)
+
+    if inserted > 0:
+        publish_daily_price(ticker)
 
     ApplicationLogger.info(f"Ticker refreshed: ticker={ticker}, rows_inserted={inserted}")
     return {"ticker": ticker, "rows_inserted": inserted}

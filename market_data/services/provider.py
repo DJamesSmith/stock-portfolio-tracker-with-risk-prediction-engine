@@ -20,3 +20,13 @@ def fetch_prices(ticker, start_date):
     history = history.reset_index().rename(columns=PROVIDER_COLUMNS)
     history["date"] = history["date"].dt.date
     return history[list(PROVIDER_COLUMNS.values())]
+
+def fetch_live_quote(ticker):
+    quote = yf.Ticker(ticker).fast_info
+    price = quote.last_price
+    previous_close = quote.previous_close
+
+    if price is None or previous_close is None:
+        return None, None
+
+    return float(price), float(previous_close)
