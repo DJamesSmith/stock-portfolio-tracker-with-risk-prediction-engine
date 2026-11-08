@@ -1,12 +1,13 @@
 STOCK PORTFOLIO RISK & FORECASTING PLATFORM
-IMPLEMENTATION PLAN — STRUCTURED POINT-WISE NOTES (VERSION 2)
+IMPLEMENTATION PLAN — STRUCTURED POINT-WISE NOTES (VERSION 3)
 
 Document basis:
-- Based on the business requirements PDF version 2.0 (November 2026).
-- Based on the project code reviewed on 7 November 2026.
-- Phases 0 to 9B are complete.
-- The remaining work prepares the backend for a Flutter test client, builds that client, then covers deployment and future scope.
-- The Flutter app is a separate project. It only uses the existing REST API. It never connects to the database directly.
+- Based on the business requirements PDF version 3.0 (November 2026).
+- Based on the project code reviewed on 8 November 2026.
+- Phases 0 to 10 are complete.
+- New in version 3: the platform is framed as live risk monitoring. A WebSocket API (Phase 10B) pushes live prices, risk-change alerts and finished recomputes to the Flutter app.
+- The remaining work adds the WebSocket API, builds the Flutter test client on top of REST and WebSocket, then covers deployment and future scope.
+- The Flutter app is a separate project. It only uses the REST API and the WebSocket. It never connects to the database directly.
 
 ======================================================================
 1. PROJECT OVERVIEW
@@ -20,35 +21,54 @@ Document basis:
   - Next-trading-day direction: up or down (Gradient Boosting, checked against "always up" and "same as today" baselines).
 - Admins upload the price dataset and train the models from Django web pages.
 - Every feature for investors and analysts is available through a JWT-secured REST API.
-- The REST API is used by a Flutter app to test the project on a phone, emulator or browser.
+- Live risk monitoring through one WebSocket connection:
+  - Live prices for the tickers a user follows.
+  - An alert when a holding's risk label changes.
+  - A notice when a requested recompute finishes.
+- The REST API and the WebSocket are used by a Flutter app to test the project on a phone, emulator or browser.
 
-1.2 Clients
+1.2 Live risk monitoring — how to describe the project
+- Objective: tell investors how risky each holding is and which way it is likely to move next, and push changes to their phone as they happen instead of making them refresh.
+- The ML models do the slow thinking:
+  - They use daily prices, run every night and after training, and give each holding a risk label and a next-day direction.
+- The WebSocket delivers what changes in between:
+  - Live portfolio value from live prices.
+  - Risk-change alerts (for example medium to high).
+  - Recompute results without polling.
+- What the WebSocket does NOT do:
+  - It does not stream predictions. A price change during the day does not change tomorrow's prediction until the next daily run.
+  - Live prices come from Yahoo Finance every 2 minutes during market hours. This is near-live, not tick-by-tick.
+
+1.3 Clients
 - Flutter app (primary test client):
   - Used by investors, analysts and admins.
-  - Talks only to the /api/ endpoints with JWT tokens.
+  - Talks to the /api/ endpoints with JWT tokens.
+  - Opens one WebSocket to /ws/live/ with the same access token.
 - Django web pages (session login):
   - Same role-based dashboards, portfolios and holdings.
   - Admin-only pages for dataset upload and model training.
 - Postman collection:
-  - Runs the full API workflow automatically.
-  - Used to check the API before and after every phase.
+  - Runs the full REST workflow automatically.
+  - Prepares WebSocket URLs and triggers live events (WebSocket requests themselves are opened by hand in Postman).
 
-1.3 User roles
+1.4 User roles
 - Investor:
   - Created by public registration (the only role registration can create).
   - Manages their own portfolios and holdings.
   - Sees their own prices, risk labels, forecasts and dashboard.
+  - Receives live alerts for their own holdings.
 - Analyst:
   - A registered user whose role an admin changed to analyst.
   - Read-only access to the portfolios of investors assigned to them.
   - Can queue price refreshes and prediction recomputes.
+  - Receives live alerts for their assigned investors' holdings.
 - Admin:
   - Created with createsuperuser, or promoted by another admin.
-  - Sees everything.
+  - Sees everything and receives live alerts for every holding.
   - Manages roles and analyst assignments.
   - Uploads datasets and trains models.
 
-1.4 Django apps (current structure)
+1.5 Django apps
 - accounts:
   - Custom User model.
   - Registration, login, JWT access and refresh tokens, logout blacklist.
@@ -59,19 +79,17 @@ Document basis:
   - Shared code: ApplicationLogger, @log_execution_time, @admin_required, api_response helper.
   - Permissions, pagination, exception handler, throttles.
   - Cache keys and invalidation, MultipleFileField, Celery ping task.
-  - The old config folder was merged into core.
 - market_data:
   - PriceHistory and DatasetUpload models.
   - Dataset upload pages (CSV files, folder or zip) and the Celery import task.
-  - Yahoo Finance provider and daily price tasks.
+  - Yahoo Finance provider (daily history and live quote) and daily price tasks.
   - Price APIs.
 - portfolios:
   - Portfolio and Holding models.
   - Role-scoped CRUD APIs.
   - Portfolio summary.
 - ml_training:
-  - All training code: algorithms.py (RandomForestClassifier, LogisticRegression, HistGradientBoostingClassifier).
-  - feature_engineering.py, labels.py, dataset.py, train_risk.py, train_forecast.py, registry.py.
+  - algorithms.py, feature_engineering.py, labels.py, dataset.py, train_risk.py, train_forecast.py, registry.py.
   - TrainingRun model, training tasks.
   - Admin training and model version pages.
 - analytics:
@@ -81,24 +99,31 @@ Document basis:
   - Investor, analyst and admin dashboards (API and web).
   - Holding price trend.
   - Portfolio and holding web pages.
+- monitoring (new in Phase 10B):
+  - WebSocket consumer and routing.
+  - Event publishing (price.update, risk.changed, prediction.updated).
+  - Live price task.
+  - No models and no tables.
 
-1.5 Database tables
+1.6 Database tables
 - users: custom User with role and the self-referencing assigned_analyst.
 - portfolios: owned by one user.
 - holdings: belong to one portfolio, carry the ML output fields.
 - price_history: shared daily prices, unique on (ticker, date), joined to holdings by ticker.
 - dataset_uploads: one row per dataset upload, with status, progress and per-file results.
 - training_runs: one row per training run, with status, current step, new versions and results.
+- Live prices are not a table. They are kept in the Redis cache for 24 hours so price_history only ever holds finished trading days.
 
 ======================================================================
 2. STANDING DEVELOPMENT RULES
 ======================================================================
 
-- Function-based views only.
+- Function-based views only for REST and web views.
+- Exception (agreed): the WebSocket consumer is a class, because Django Channels only supports class-based consumers. It stays small: connect, disconnect, receive and one event handler.
 - PyJWT for tokens, not SimpleJWT.
 - Beginner-friendly code with no comments.
-- Django forms / ModelForms for validation, DRF serializers only for output.
-- Every API response uses the status / message / data / errors format.
+- Django forms / ModelForms for validation (WebSocket messages included), DRF serializers only for output.
+- Every API response uses the status / message / data / errors format. WebSocket events use the same four keys plus type.
 - settings.py stays a single file.
 - Only add code or settings that are actually required, and explain why each one is needed.
 - Update the Postman collection every phase.
@@ -121,9 +146,10 @@ Phase 7   Dashboards and role-based views ................... Complete
 Phase 8   Security, performance and hardening ............... Complete
 Phase 9   Testing, Postman and README ....................... Complete
 Phase 9B  GUI dataset upload, GUI training, ml_training app . Complete
-Phase 10  Flutter readiness (backend) ....................... Next
-Phase 11  Flutter test client ............................... Planned
-Phase 12  Deployment ........................................ Planned
+Phase 10  Flutter readiness (backend) ....................... Complete
+Phase 10B Live risk monitoring WebSocket API (backend) ...... Next
+Phase 11  Flutter test client (REST + live) ................. Planned
+Phase 12  Deployment (ASGI) ................................. Planned
 Phase 13  Future scope ...................................... Planned
 
 ======================================================================
@@ -157,7 +183,6 @@ Phase 13  Future scope ...................................... Planned
 - Yahoo Finance provider.
 - fetch_daily_prices and refresh_single_ticker tasks.
 - Latest price, price history and refresh APIs.
-- Dataset loading moved to the Datasets page in Phase 9B; the load_price_history command was removed.
 
 4.5 Phase 4 — portfolios
 - Portfolio and Holding CRUD with role-scoped querysets.
@@ -170,7 +195,6 @@ Phase 13  Future scope ...................................... Planned
 - Risk labels from future 30-day volatility; direction labels from the next close.
 - Time-based split: train up to 2022, validation 2023, test 2024 onwards, with a 45-day label gap for risk.
 - Versioned model registry in ml_models/.
-- Code moved into the ml_training app in Phase 9B; the train_models command was removed.
 
 4.7 Phase 6 — analytics serving
 - Nightly risk and forecast recompute tasks.
@@ -191,149 +215,201 @@ Phase 13  Future scope ...................................... Planned
 - README and .env.example.
 
 4.11 Phase 9B — Template control of data and training
-- config merged into core.
-- New ml_training app holding all training code.
-- Datasets page:
-  - Upload CSV files, a folder or the Kaggle zip.
-  - Progress bar, per-file results.
-  - Fetch latest prices button.
-- ML Training page:
-  - Data readiness checks.
-  - Train both or one model, optional ticker filter, optional prediction update.
-  - Live run progress, cancel while waiting.
-  - Training history.
+- config merged into core; new ml_training app holding all training code.
+- Datasets page: upload CSV files, a folder or the Kaggle zip; progress bar; per-file results; fetch latest prices.
+- ML Training page: data readiness, train both or one model, optional ticker filter and prediction update, live run progress, cancel, history.
 - Model versions pages: baseline comparison, confusion matrix, feature importance, parameters.
-- Scheduled weekly retraining now creates a TrainingRun.
+- Scheduled weekly retraining creates a TrainingRun.
+
+4.12 Phase 10 — Flutter readiness (backend)
+- ALLOWED_HOSTS = ["localhost", "127.0.0.1", "10.0.2.2", "<computer Wi-Fi IP>"]:
+  - The emulator (10.0.2.2) and a phone on the same Wi-Fi now get 401 instead of 400 DisallowedHost.
+- runserver 0.0.0.0:8000 for physical phones.
+- CORS unchanged: Flutter web runs on port 3000, already in CORS_ALLOWED_ORIGINS.
+- stock_risk_engine/__init__.py restored: from .celery import app as celery_app.
+  - Note: this line has gone missing twice. If your IDE removes "unused imports" automatically, exclude this file.
+- API contract confirmed with no code change: role in login and me/, decimals as strings, ISO dates, pagination keys, 400/401/403/404/429 shapes, 202 + task_id, absolute next links using the app's host.
+- Optional admin status APIs (BE-07) and OpenAPI: not added. The Flutter admin links to /datasets/ and /ml/.
+- Postman collection rebuilt, with a "Flutter readiness" folder (emulator host, phone host, unknown host, CORS preflight).
+- README "Testing with Flutter" section.
 
 ======================================================================
-5. PHASE 10 — FLUTTER READINESS (BACKEND)
+5. PHASE 10B — LIVE RISK MONITORING WEBSOCKET API (BACKEND)
 ======================================================================
 
-Goal: the Flutter app can reach the API from every test target, and every API contract Flutter depends on is confirmed and documented.
+Goal: one authenticated WebSocket per app that pushes live prices, risk-change alerts and finished recomputes, scoped by role, without changing any REST endpoint.
 
-5.1 Network access for Flutter test targets
-- Problem:
-  - ALLOWED_HOSTS = [] with DEBUG = True only accepts localhost, 127.0.0.1 and [::1].
-  - The Android emulator reaches the computer as 10.0.2.2, so Django rejects it with 400 Bad Request (DisallowedHost).
-  - A physical phone reaches the computer by its Wi-Fi IP address (for example 192.168.1.20), which is also rejected.
-- Required change:
-  - ALLOWED_HOSTS = ["localhost", "127.0.0.1", "10.0.2.2", "<your computer's Wi-Fi IP>"].
-- Run the server on all network interfaces when testing on a physical phone:
-  - python manage.py runserver 0.0.0.0:8000
-- Base URL used by Flutter on each target:
-  - Android emulator: http://10.0.2.2:8000
-  - iOS simulator: http://127.0.0.1:8000
-  - Physical phone on the same Wi-Fi: http://<computer IP>:8000
-  - Flutter web (Chrome): http://127.0.0.1:8000
-- Android allows plain HTTP to these addresses only in debug builds with cleartext traffic enabled (Phase 11 setting).
+5.1 Packages and server
+- channels: WebSocket routing and consumers.
+- channels-redis: the channel layer that lets Celery workers send events to open connections.
+- daphne: the ASGI server. Listed first in INSTALLED_APPS so "python manage.py runserver" serves HTTP and WebSocket together.
+- No change to how the project is started.
 
-5.2 CORS for Flutter web
-- CORS only matters for Flutter web in a browser. Android and iOS apps are not affected by CORS.
-- The current CORS_ALLOWED_ORIGINS already allows http://localhost:3000 and http://127.0.0.1:3000.
-- Simplest approach, no setting change:
-  - Run Flutter web on port 3000: flutter run -d chrome --web-port 3000
-- Only change CORS_ALLOWED_ORIGINS if a different port is needed.
+5.2 Settings
+- INSTALLED_APPS: "daphne" first, "monitoring" added. ("channels" is not required in INSTALLED_APPS.)
+- ASGI_APPLICATION = "stock_risk_engine.asgi.application".
+- CHANNEL_LAYER_REDIS_URL from .env (Redis database 4), added to the "all Redis URLs must differ" check (now five URLs).
+- CHANNEL_LAYERS uses RedisChannelLayer with socket_timeout 10:
+  - Why: redis-py 8 times out reads after 5 seconds by default, and the channel layer waits up to 5 seconds for messages. Without a longer timeout, any connection idle for about 5 seconds crashes with error 1011.
+- Beat schedule: monitoring.tasks.poll_live_prices every 2 minutes, Monday to Friday, 13:00–21:58 UTC (covers US market hours in both summer and winter time).
 
-5.3 Celery app import
-- stock_risk_engine/__init__.py must contain: from .celery import app as celery_app
-- Without it, tasks queued outside web requests (shell, Beat) use Celery's default app and ignore the CELERY_* settings.
-- This line has been removed from the uploaded code again and must be restored.
+5.3 asgi.py
+- ProtocolTypeRouter: "http" goes to Django, "websocket" goes to the monitoring routes.
+- No AllowedHostsOriginValidator:
+  - Flutter on Android and iOS sends no Origin header, and that validator rejects connections without one.
+  - The socket is authenticated with a token in the URL, not a cookie, so another website cannot use the user's session (the attack the Origin check prevents).
 
-5.4 API contract confirmed for Flutter (no code change expected)
-- Login and /api/accounts/me/ return the user's role, so Flutter can choose investor, analyst or admin screens.
-- Decimal values (prices, quantities, values) are returned as strings. Flutter parses them with double.parse or a decimal package.
-- Dates are YYYY-MM-DD. Date-times are ISO 8601 in UTC.
-- Lists are paginated: count, next, previous, results.
-- 401 means the access token expired or is invalid: refresh once, then retry; if refresh fails, log out.
-- 403 means the role is not allowed. 404 means the record is not visible to this user.
-- 429 includes errors.retry_after_seconds.
-- 202 responses return a task_id. Flutter polls /api/analytics/tasks/{task_id}/ (analyst and admin only).
-- Validation errors are field lists in errors, so Flutter can show them under each form field.
+5.4 Endpoint and authentication
+- URL: ws://<host>:8000/ws/live/?token=<access token>
+  - Emulator: ws://10.0.2.2:8000/ws/live/?token=...
+  - Phone: ws://<computer IP>:8000/ws/live/?token=...
+  - iOS simulator and Flutter web: ws://127.0.0.1:8000/ws/live/?token=...
+- The token goes in the URL because browsers cannot set an Authorization header on a WebSocket. Daphne logs only the path, never the token.
+- The same checks as REST: valid signature, token_type access, active user, issued after the last password change.
+- On failure: an "error" event, then close code 4401. Flutter refreshes the token and reconnects.
 
-5.5 Optional — admin status in Flutter
-- Only if the Flutter admin should show dataset uploads and training runs.
-- Read-only admin APIs:
-  - GET /api/market/uploads/
-  - GET /api/market/uploads/{id}/
-  - GET /api/ml/training-runs/
-  - GET /api/ml/training-runs/{id}/
-  - GET /api/ml/models/
-- Uploading files and starting training stay in the Django web pages.
+5.5 Messages from the app (validated by LiveActionForm)
+- {"action": "subscribe", "tickers": ["AAPL", "MSFT"]}
+- {"action": "unsubscribe", "tickers": ["MSFT"]}
+- {"action": "ping"}
+- Rules:
+  - Tickers use the same pattern as the REST API and are upper-cased.
+  - At most 20 tickers per connection.
+  - Invalid JSON or an invalid message returns an "error" event with field errors; the connection stays open.
 
-5.6 Optional — OpenAPI documentation
-- drf-spectacular schema and Swagger page, only if a browsable API reference is wanted for Flutter work.
+5.6 Events from the server
+- Format: type + status + message + data + errors.
+- connection.ready: user_id, username, role, token_expires_at, max_tickers.
+- subscribed / unsubscribed: the tickers now followed.
+- price.update: ticker, price, previous_close, change, change_percent, date, as_of, source (live or daily). Decimals are strings.
+  - Sent on subscribe (latest known price), by the live price task, and after daily price downloads and refreshes.
+- risk.changed: holding fields plus previous_label. Sent only when the label actually changes.
+- prediction.updated: holding fields plus the task_id returned by the recompute API. Replaces task polling.
+- pong: server_time and token_expires_at.
+- error: errors explains the problem.
 
-5.7 Phase 10 deliverables
-- Updated settings.py (ALLOWED_HOSTS, and CORS only if needed).
-- Restored stock_risk_engine/__init__.py.
-- Optional admin status APIs, serializers and URLs if chosen.
-- Updated Postman collection and README "Testing with Flutter" section.
+5.7 Who receives what (groups)
+- user_<id>: every connection joins its own group.
+- admins: admin connections also join this group.
+- ticker_<TICKER>: joined on subscribe.
+- Holding events go to the owner, the owner's assigned analyst and the admins group.
+- Recipients are worked out when the event is sent, so reassigning an analyst takes effect immediately.
 
-5.8 Phase 10 acceptance checks
-- From the Android emulator, GET http://10.0.2.2:8000/api/accounts/me/ returns 401 (not 400).
-- From a phone on the same Wi-Fi, login succeeds.
-- From Flutter web on port 3000, requests are not blocked by CORS.
-- The Postman collection still passes.
+5.8 Session rules
+- Token expiry is checked on every message and every event; an expired token closes the socket with 4401.
+- Each ping re-checks the account in the database. A password change, deactivation or role change closes the socket with 4401.
+- Flutter pings every 30 seconds and reconnects with a growing delay (1, 2, 4 … 30 seconds).
+
+5.9 Live prices
+- monitoring.tasks.poll_live_prices reads the latest price of every ticker held in a portfolio (yfinance fast_info: last_price and previous_close).
+- Quotes are cached in Redis for 24 hours (key live_quote:<ticker>) and sent to ticker_<TICKER>.
+- They are not saved to price_history: the daily table and the ML features only use finished trading days.
+
+5.10 Files (Phase 10B delivery)
+- New: monitoring/__init__.py, apps.py, consumers.py, routing.py, forms.py, services.py, tasks.py.
+- Changed:
+  - stock_risk_engine/settings.py
+  - stock_risk_engine/asgi.py
+  - stock_risk_engine/__init__.py (Celery import restored again)
+  - core/cache.py (live_quote_key)
+  - market_data/services/provider.py (fetch_live_quote)
+  - market_data/tasks.py (price.update after new daily rows)
+  - analytics/services/predict.py (risk.changed when a label moves)
+  - analytics/tasks.py (prediction.updated with the task_id)
+  - requirements.txt
+  - README.md
+  - stock_risk_engine.postman_collection.json
+- .env: add CHANNEL_LAYER_REDIS_URL=redis://localhost:6379/4
+- No migrations.
+
+5.11 Postman
+- New folder "6. Live risk monitoring (WebSocket triggers)":
+  - Prepare live socket URLs (investor_ws_url, analyst_ws_url, admin_ws_url).
+  - Trigger prediction.updated (analyst recompute).
+  - Trigger price.update (analyst refresh).
+- Postman cannot store WebSocket requests in a collection file. Open New > WebSocket and paste investor_ws_url.
+
+5.12 Phase 10B acceptance checks
+- Missing, invalid, expired and refresh tokens are rejected with an error event and close code 4401.
+- Investor, analyst and admin connect and receive connection.ready with their role.
+- The emulator host with no Origin header and Flutter web from localhost:3000 can both connect.
+- Invalid JSON, unknown actions, invalid tickers and more than 20 tickers return field errors without closing.
+- Subscribing returns the latest price at once; unsubscribed users receive nothing.
+- An analyst recompute sends prediction.updated with the same task_id to the investor, the analyst and admins, and nothing to other investors.
+- A label change sends risk.changed with previous_label; an unchanged label sends no alert.
+- The live price task and a price refresh both send price.update to subscribers only.
+- Password change and role change close the socket on the next ping.
+- A connection idle for more than 25 seconds still answers ping.
+- The REST Postman collection still passes under ASGI.
 
 ======================================================================
-6. PHASE 11 — FLUTTER TEST CLIENT
+6. PHASE 11 — FLUTTER TEST CLIENT (REST + LIVE)
 ======================================================================
 
-Goal: a simple, clean Flutter app that exercises every investor and analyst feature and the admin dashboards, designed for phones first.
+Goal: a simple, clean Flutter app that exercises every investor and analyst feature and the admin dashboards, with live prices and risk alerts, designed for phones first.
 
 6.1 Project setup
 - Separate repository, for example stock_risk_engine_flutter.
 - Packages:
   - dio: HTTP requests and interceptors.
+  - web_socket_channel: the live connection.
   - flutter_secure_storage: store access and refresh tokens.
-  - provider: app state (logged-in user, role).
+  - provider: app state (logged-in user, role, live connection state).
   - go_router: navigation and role-based redirects.
   - fl_chart: price charts.
   - intl: number, currency and date formatting.
 - Base URL passed at run time:
   - flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
-- Android debug builds: android:usesCleartextTraffic="true" so plain HTTP works during testing.
+  - The WebSocket URL is derived from it: http -> ws, plus /ws/live/?token=<access>.
+- Android debug builds: android:usesCleartextTraffic="true" so plain HTTP and WS work during testing.
 
 6.2 Suggested folder structure
 - lib/main.dart
-- lib/config/api_config.dart
+- lib/config/api_config.dart (base URL and WebSocket URL)
 - lib/core/api_client.dart (dio, interceptors)
 - lib/core/token_storage.dart
 - lib/core/api_response.dart (status, message, data, errors)
-- lib/models/ (user, portfolio, holding, price, dashboard, risk, forecast)
+- lib/core/live_socket.dart (connect, ping, reconnect, event stream)
+- lib/models/ (user, portfolio, holding, price, dashboard, risk, forecast, live_event, live_quote)
 - lib/services/ (auth, portfolio, holding, market, analytics, dashboard, users)
 - lib/screens/common/, lib/screens/investor/, lib/screens/analyst/, lib/screens/admin/
-- lib/widgets/ (risk badge, direction badge, stat card, money text, error view, empty view, loading view)
+- lib/widgets/ (risk badge, direction badge, stat card, money text, live price chip, connection indicator, alert banner, error view, empty view, loading view)
 
 6.3 Authentication and session
 - Login screen accepts username or email and password.
 - Save both tokens in flutter_secure_storage.
 - Read user.role from the login response and open the matching home screen.
 - Attach Authorization: Bearer <access> to every request.
-- On 401:
-  - Call /api/accounts/token/refresh/ once.
-  - Save the new access token and retry the original request.
-  - If refresh fails, clear tokens and go to Login.
-- Logout:
-  - POST /api/accounts/logout/ with the refresh token.
-  - Clear storage and go to Login.
-- After change password, save the new token pair from the response.
+- On 401: call /api/accounts/token/refresh/ once, save the new access token and retry; if refresh fails, clear tokens and go to Login.
+- Logout: POST /api/accounts/logout/ with the refresh token, close the live socket, clear storage and go to Login.
+- After change password, save the new token pair from the response and reconnect the live socket.
 
-6.4 Screens — common
-- Splash: check stored tokens, call /api/accounts/me/, route by role.
+6.4 Live connection
+- Open after login or splash; close on logout.
+- Send ping every 30 seconds.
+- On close code 4401: refresh the access token once and reconnect; if refresh fails, log out.
+- On any other drop: reconnect after 1, 2, 4, 8, 16, then every 30 seconds.
+- After reconnecting, subscribe again to the tickers on screen.
+- Expose connection state (connected, reconnecting, offline) to the UI.
+
+6.5 Screens — common
+- Splash: check stored tokens, call /api/accounts/me/, route by role, open the live socket.
 - Login: POST /api/accounts/login/.
 - Register: POST /api/accounts/register/ (creates an investor).
 - Profile: GET and PATCH /api/accounts/me/.
 - Change password: POST /api/accounts/change-password/.
 
-6.5 Screens — investor
+6.6 Screens — investor
 - Investor home (dashboard): GET /api/dashboard/investor/.
+  - Total value updates live from price.update for held tickers.
+  - Risk-change alert banner from risk.changed.
 - Portfolio list: GET /api/portfolios/ with pull-to-refresh and paging.
 - Create / edit portfolio form: POST /api/portfolios/, PATCH /api/portfolios/{id}/.
 - Delete portfolio with confirmation: DELETE /api/portfolios/{id}/.
 - Portfolio detail:
   - GET /api/portfolios/{id}/summary/
   - GET /api/analytics/portfolio/{id}/risk-summary/
+  - Subscribe to the portfolio's tickers; live value and day change per holding.
 - Add / edit holding form: POST /api/portfolios/{id}/holdings/, PATCH /api/holdings/{id}/.
 - Delete holding with confirmation: DELETE /api/holdings/{id}/.
 - Holding detail:
@@ -341,20 +417,25 @@ Goal: a simple, clean Flutter app that exercises every investor and analyst feat
   - GET /api/analytics/holdings/{id}/risk/
   - GET /api/analytics/holdings/{id}/forecast/
   - GET /api/dashboard/holdings/{id}/trend/ (line chart with buy price marker)
+  - Live price chip with "Live" or "Daily close" from data.source.
 - Stock lookup:
   - GET /api/market/prices/{ticker}/
   - GET /api/market/prices/{ticker}/history/
+  - Follow button that subscribes to the ticker.
 
-6.6 Screens — analyst
+6.7 Screens — analyst
 - Analyst home (dashboard): GET /api/dashboard/analyst/ (clients, high-risk holdings).
+  - Live alert list from risk.changed for assigned clients.
 - Client portfolios: GET /api/portfolios/ (only assigned investors), read-only.
 - Portfolio detail and holding detail: same as investor but without add, edit or delete buttons.
 - Actions on holding detail:
-  - Recompute prediction: POST /api/analytics/holdings/{id}/recompute/, then poll the task status.
+  - Recompute prediction: POST /api/analytics/holdings/{id}/recompute/, then wait for prediction.updated with the same task_id.
+  - Fallback: if no event arrives within 30 seconds, poll /api/analytics/tasks/{task_id}/.
   - Refresh prices: POST /api/market/refresh/{ticker}/.
 
-6.7 Screens — admin
+6.8 Screens — admin
 - Admin home (dashboard): GET /api/dashboard/admin/ (user counts, totals, latest price date, models in use).
+  - Live alert feed from risk.changed for all holdings.
 - Users list: GET /api/accounts/users/.
 - Edit user: PATCH /api/accounts/users/{id}/ to change role or assigned analyst.
 - All portfolios: GET /api/portfolios/ (admin sees all).
@@ -362,7 +443,7 @@ Goal: a simple, clean Flutter app that exercises every investor and analyst feat
   - Shown as an "Open in browser" link to /datasets/ and /ml/.
   - Uploads and training are done in the Django web pages.
 
-6.8 Design rules for the Flutter pages
+6.9 Design rules for the Flutter pages
 - Material 3, one seed colour, light and dark themes.
 - Designed for phone width first; content stays readable on tablets and in Chrome.
 - Bottom navigation per role:
@@ -380,60 +461,71 @@ Goal: a simple, clean Flutter app that exercises every investor and analyst feat
 - Destructive actions ask for confirmation.
 - ML outputs show the confidence and the model version, with the disclaimer that predictions are not financial advice.
 - Read-only screens for analysts hide edit buttons instead of showing errors.
+- Live rules:
+  - A small connection indicator (connected, reconnecting, offline) in the app bar.
+  - Live prices briefly highlight when they change; the label "Live" or "Daily close" is always shown.
+  - Risk alerts show the old and new label as text, for example "AAPL: medium → high".
+  - When offline, screens keep the last REST data and show "Live updates paused".
 
-6.9 Sub-phases
+6.10 Sub-phases
 - 11A: project setup, API client, token storage, login, register, splash, role routing, logout.
 - 11B: investor dashboard, portfolios, holdings, forms, holding detail with chart, stock lookup.
-- 11C: analyst dashboard, client portfolios, recompute and refresh actions with task polling.
+- 11C: analyst dashboard, client portfolios, recompute and refresh actions.
 - 11D: admin dashboard, users list and role/assignment editing.
-- 11E: polish (themes, empty and error states), test on emulator, phone and Chrome.
+- 11E: live layer — LiveSocket service, connection indicator, live prices on portfolio and holding screens, risk alerts, prediction.updated instead of polling.
+- 11F: polish (themes, empty and error states), test on emulator, phone and Chrome.
 
-6.10 Phase 11 acceptance checks
+6.11 Phase 11 acceptance checks
 - The full Postman journey can be repeated in the app: register, promote, assign, create portfolio, add holding, see risk and forecast, analyst read-only view, token expiry and refresh, logout.
+- Live checks:
+  - With the app open on a holding, an analyst recompute updates the investor's screen without a refresh.
+  - A forced risk change shows an alert to the investor, their analyst and an admin, and to nobody else.
+  - Turning Wi-Fi off and on reconnects and resubscribes automatically.
+  - After 15 minutes the socket closes with 4401, the token refreshes and the socket reconnects without the user noticing.
 - Investors cannot see other investors' data; analysts cannot edit; admin-only screens are hidden from other roles.
 - The app works on the Android emulator, a physical phone and Chrome.
 
 ======================================================================
-7. PHASE 12 — DEPLOYMENT
+7. PHASE 12 — DEPLOYMENT (ASGI)
 ======================================================================
 
 7.1 Containers
-- Dockerfile for the Django app (Gunicorn is already in requirements.txt).
+- Dockerfile for the Django app.
 - docker-compose.yml services:
-  - web: gunicorn stock_risk_engine.wsgi
+  - web: daphne -b 0.0.0.0 -p 8000 stock_risk_engine.asgi:application (serves HTTP and WebSocket)
   - worker: celery -A stock_risk_engine worker
   - beat: celery -A stock_risk_engine beat
   - db: PostgreSQL
-  - redis: Redis
+  - redis: Redis (databases 0 to 4)
+- Gunicorn is no longer needed for the web service, because Daphne serves both protocols.
 - Shared volumes:
   - ml_models: written by the worker during training, read by the web app and worker.
   - media: written by the web app on upload, read by the worker during import.
   - postgres data volume.
 - Health checks for db, redis and web.
-- For Docker provide 3 files:
-  - .dockerignore
-  - docker-compose-yml
-  - Dockerfile
-  - Docker Notes (Instructions for Docker)
 
 7.2 Settings needed when the app is reachable from other machines
 - DEBUG, ALLOWED_HOSTS and CORS origins read from .env instead of fixed values.
 - STATIC_ROOT and collectstatic; static files served by WhiteNoise or a reverse proxy.
-- HTTPS through a reverse proxy before any real users.
-- The Flutter release build uses the deployed HTTPS base URL.
+- HTTPS and WSS through a reverse proxy before any real users:
+  - The proxy must pass the Upgrade and Connection headers for /ws/.
+  - Turn off query-string logging for /ws/ in the proxy so tokens are not written to its access log.
+- The Flutter release build uses the deployed https:// and wss:// URLs.
 - Only needed if the project goes beyond local testing; local development keeps DEBUG = True.
 
 7.3 Phase 12 acceptance checks
 - docker compose up starts all five services.
 - Upload, training and predictions work end to end in containers.
+- WebSocket events from the worker reach the Flutter app through the proxy.
 - The Flutter app works against the deployed URL.
 
 ======================================================================
 8. PHASE 13 — FUTURE SCOPE
 ======================================================================
 
-- Push notifications with Firebase Cloud Messaging when a risk label changes (needs device tokens and the previous label).
-- Live price updates with Django Channels / WebSockets instead of polling.
+- Push notifications with Firebase Cloud Messaging when a risk label changes while the app is closed (the WebSocket covers the app while it is open; needs device tokens).
+- User alert preferences: choose which holdings or which risk levels send alerts.
+- A paid streaming price provider for second-by-second quotes instead of 2-minute polling.
 - Sector analytics: ticker-to-sector lookup, sector exposure, diversification score.
 - Rebalancing suggestions from portfolio composition and risk scores.
 - LSTM forecasting as a comparison against Gradient Boosting.
@@ -444,6 +536,7 @@ Goal: a simple, clean Flutter app that exercises every investor and analyst feat
 ======================================================================
 
 - core.tasks.ping: every 15 minutes.
+- monitoring.tasks.poll_live_prices: every 2 minutes, Monday to Friday 13:00–21:58 UTC.
 - market_data.tasks.fetch_daily_prices: Monday to Friday 22:00 UTC.
 - analytics.tasks.recompute_holding_risk: Monday to Friday 23:00 UTC.
 - analytics.tasks.recompute_holding_forecast: Monday to Friday 23:15 UTC.
@@ -453,23 +546,39 @@ Goal: a simple, clean Flutter app that exercises every investor and analyst feat
   - market_data.tasks.import_dataset_upload (Datasets page).
   - analytics.tasks.recompute_single_holding (recompute API).
   - ml_training.tasks.run_training (ML Training page).
-- Order: prices arrive first, predictions run after prices, retraining runs weekly when markets are closed.
+- Live events sent by tasks:
+  - price.update: poll_live_prices, fetch_daily_prices and refresh_single_ticker (when new rows are saved).
+  - risk.changed: every prediction run, for holdings whose label moved.
+  - prediction.updated: recompute_single_holding.
+- Order: live prices during the session, final daily prices at 22:00, predictions after prices, retraining weekly when markets are closed.
 
 ======================================================================
-10. OPEN DECISIONS
+10. REDIS DATABASES
 ======================================================================
 
-- Should the Flutter admin show dataset upload and training status (optional APIs in 5.5), or only link to the web pages?
-- Is OpenAPI / Swagger documentation wanted (5.6)?
+- 0: Celery broker.
+- 1: Celery results.
+- 2: Django cache, throttles and live quotes.
+- 3: Refresh-token blacklist.
+- 4: Channel layer (WebSocket messages).
+- Settings refuse to start if the five URLs are not different.
+
+======================================================================
+11. OPEN DECISIONS
+======================================================================
+
+- Should the Flutter admin show dataset upload and training status (read-only admin APIs), or only link to the web pages? (Phase 10 kept the links.)
+- Is OpenAPI / Swagger documentation wanted?
 - State management in Flutter: provider is suggested for simplicity; riverpod or bloc are alternatives.
 - Will the project be deployed beyond local testing (Phase 12), or stay local?
+- Should Firebase push notifications be added for when the app is closed (Phase 13)?
 
 ======================================================================
-11. IMMEDIATE NEXT STEPS
+12. IMMEDIATE NEXT STEPS
 ======================================================================
 
-1. Restore from .celery import app as celery_app in stock_risk_engine/__init__.py.
-2. Phase 10: add the Flutter test hosts to ALLOWED_HOSTS and confirm access from the emulator, a phone and Chrome on port 3000.
-3. Decide on the optional admin status APIs and OpenAPI docs.
+1. Phase 10B: install channels, channels-redis and daphne; add CHANNEL_LAYER_REDIS_URL to .env; apply the Phase 10B files.
+2. Run the server and confirm the startup line says "Starting ASGI/Daphne".
+3. Connect with Postman (New > WebSocket) and check connection.ready, subscribe and the trigger requests.
 4. Phase 11A: create the Flutter project, API client, login and role routing.
-5. Continue Phase 11B to 11E, then Phase 12 if deploying.
+5. Continue Phase 11B to 11F, then Phase 12 if deploying.

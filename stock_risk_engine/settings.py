@@ -23,8 +23,8 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
-    'django.contrib.staticfiles',
     'daphne',                       # added library to env to handle asynchronous protocols like WebSockets, HTTP/2, and long-polling in Django applications
+    'django.contrib.staticfiles',
 
     # Third-party
     'rest_framework',

@@ -16,14 +16,29 @@
 
                 <div class="d-flex align-items-center gap-2">
                     {% if user.is_authenticated %}
-                        <a class="btn btn-outline-light btn-sm" href="{% url 'accounts:dashboard' %}"> Dashboard </a>
-                        <a class="btn btn-outline-light btn-sm" href="{% url 'dashboards:portfolio-list' %}"> Portfolios </a>
-                        <a class="btn btn-outline-light btn-sm" href="{% url 'accounts:profile' %}"> Profile </a>
+                        <ul class="navbar-nav">
+                            <li class="nav-item">
+                                <a class="nav-link" href="{% url 'accounts:dashboard' %}"> Dashboard </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{% url 'dashboards:portfolio-list' %}"> Portfolios </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{% url 'accounts:profile' %}"> Profile </a>
+                            </li>
 
-                        {% if user.role == "admin" %}
-                            <a class="btn btn-outline-light btn-sm" href="{% url 'accounts:user-list' %}"> Users </a>
-                            <a class="btn btn-outline-light btn-sm" href="{% url 'market_data:dataset-list' %}"> Datasets </a>
-                            <a class="btn btn-outline-light btn-sm" href="{% url 'ml_training:training' %}"> ML Training </a>
+
+                            {% if user.role == "admin" %}
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'accounts:user-list' %}"> Users </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'market_data:dataset-list' %}"> Datasets </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'ml_training:training' %}"> ML Training </a>
+                                </li>
+                            </ul>
                         {% endif %}
 
                         <form method="POST" action="{% url 'accounts:logout' %}" class="d-inline">
@@ -31,8 +46,10 @@
                             <button type="submit" class="btn btn-danger btn-sm"> Logout </button>
                         </form>
                     {% else %}
-                        <a class="btn btn-outline-light btn-sm" href="{% url 'accounts:login' %}"> Login </a>
-                        <a class="btn btn-primary btn-sm" href="{% url 'accounts:register' %}"> Register </a>
+                        <ul class="navbar-nav">
+                            <a class="btn btn-outline-light btn-sm" href="{% url 'accounts:login' %}"> Login </a>
+                            <a class="btn btn-primary btn-sm" href="{% url 'accounts:register' %}"> Register </a>
+                        </ul>
                     {% endif %}
                 </div>
             </div>
