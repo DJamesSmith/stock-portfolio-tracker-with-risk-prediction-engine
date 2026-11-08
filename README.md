@@ -6,6 +6,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-cache%20%7C%20broker-DC382D?logo=redis&logoColor=white)
 ![Celery](https://img.shields.io/badge/Celery-5.6-37814A?logo=celery&logoColor=white)
+![Channels](https://img.shields.io/badge/Django%20Channels-4.3-44B78B)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-ML-F7931E?logo=scikitlearn&logoColor=white)
 
 A Django REST Framework backend and web app where investors track stock portfolios and every holding gets two machine-learning predictions:
@@ -13,7 +14,9 @@ A Django REST Framework backend and web app where investors track stock portfoli
 - a **risk label** (low / medium / high) from a **Random Forest**, checked against a **Logistic Regression** baseline
 - a **next-trading-day direction** (up / down) from **Gradient Boosting**, checked against simple baselines
 
-Admins upload the price dataset and train the models from the browser. A JSON API with JWT authentication serves mobile clients such as Flutter.
+The platform is built for **live risk monitoring**. The models do the slow thinking: they run on daily prices and refresh every holding's prediction each night. A WebSocket delivers what changes in between: live prices for the tickers a user follows, an alert the moment a holding's risk label changes, and a notice when a requested recompute finishes.
+
+Admins upload the price dataset and train the models from the browser. A JSON API with JWT authentication and one WebSocket endpoint serve the Flutter app.
 
 **Author:** Dion James Smith
 
@@ -33,6 +36,8 @@ Admins upload the price dataset and train the models from the browser. A JSON AP
 - [Background tasks](#background-tasks)
 - [Caching and security](#caching-and-security)
 - [Project structure](#project-structure)
+- [Live risk monitoring (WebSocket)](#live-risk-monitoring-websocket)
+- [Testing with Flutter](#testing-with-flutter)
 - [Postman collection](#postman-collection)
 - [Logging](#logging)
 - [Roadmap](#roadmap)
@@ -56,6 +61,12 @@ Admins upload the price dataset and train the models from the browser. A JSON AP
 - Upload the Kaggle S&P 500 dataset as CSV files, a whole folder, or the original `.zip`
 - Daily price updates from Yahoo Finance
 
+**Live risk monitoring**
+- One WebSocket connection per app, authenticated with the same JWT access token
+- Live prices for followed tickers, refreshed every 2 minutes during US market hours
+- Risk-change alerts sent to the investor, their analyst and admins as soon as a label moves
+- `prediction.updated` replaces polling the task status after a recompute
+
 **Platform**
 - Three roles (investor, analyst, admin), with data scoped to each role
 - JWT authentication built with PyJWT: refresh tokens, logout blacklist, tokens invalidated on password change
@@ -71,7 +82,8 @@ Admins upload the price dataset and train the models from the browser. A JSON AP
 | Database | PostgreSQL (psycopg 3) |
 | Authentication | Custom `User` model, JWT with PyJWT |
 | Background jobs | Celery 5.6 + Celery Beat, Redis broker |
-| Cache, throttling, token blacklist | Redis |
+| Real-time | Django Channels 4.3, channels-redis, Daphne (ASGI server) |
+| Cache, throttling, token blacklist, channel layer | Redis |
 | Machine learning | pandas, NumPy, scikit-learn, joblib |
 | Market data | Kaggle CSV dataset, yfinance |
 | Web interface | Django templates, Bootstrap 5, Chart.js |
@@ -81,6 +93,9 @@ Admins upload the price dataset and train the models from the browser. A JSON AP
 ```mermaid
 flowchart LR
     Flutter[Flutter / Postman] -- JWT --> API[DRF API]
+    Flutter -- "WebSocket + JWT" --> Live[Channels consumer]
+    Live --> Layer[(Redis channel layer)]
+    Worker -- events --> Layer
     Browser[Browser] -- session --> Web[Django templates]
     API --> DB[(PostgreSQL)]
     Web --> DB
@@ -103,8 +118,9 @@ flowchart LR
 | `ml_training` | All training code: the three algorithms, features, labels, data split, model registry, training runs and pages |
 | `analytics` | Uses the trained models: prediction tasks, risk and forecast APIs, portfolio risk summary |
 | `dashboards` | Investor, analyst and admin dashboards, holding trend, portfolio and holding pages |
+| `monitoring` | Live risk monitoring: WebSocket consumer, event publishing, live price task |
 
-Forms (`ModelForm`) validate input. DRF serializers are used only for output.
+Forms (`ModelForm`) validate input. DRF serializers are used only for output. REST views are function-based; the one WebSocket consumer is a small class because Django Channels only supports class-based consumers.
 
 ## Roles
 
@@ -166,6 +182,8 @@ celery -A stock_risk_engine worker -l info
 celery -A stock_risk_engine beat -l info
 ```
 
+`daphne` is the first entry in `INSTALLED_APPS`, so `runserver` starts the ASGI server and serves both HTTP and the WebSocket. The startup line says `Starting ASGI/Daphne ... development server`.
+
 On Windows, start the worker with `--pool=solo`.
 
 Open http://127.0.0.1:8000 and log in as the admin.
@@ -182,11 +200,12 @@ Open http://127.0.0.1:8000 and log in as the admin.
 | `CELERY_RESULT_BACKEND` | Celery results | `redis://localhost:6379/1` |
 | `REDIS_URL` | Django cache and throttles | `redis://localhost:6379/2` |
 | `TOKEN_BLACKLIST_REDIS_URL` | Logged-out refresh tokens | `redis://localhost:6379/3` |
+| `CHANNEL_LAYER_REDIS_URL` | WebSocket messages between workers and connections | `redis://localhost:6379/4` |
 | `CACHE_TTL_SECONDS` | Summary cache lifetime | `300` |
 | `LOGIN_THROTTLE_RATE`, `REGISTER_THROTTLE_RATE`, `MARKET_REFRESH_THROTTLE_RATE` | Rate limits | `5/minute`, `10/hour`, `10/hour` |
 | `MARKET_SEED_TICKERS` | Tickers always included in daily price updates | `AAPL,MSFT` |
 
-The four Redis URLs must be different. Settings refuse to start otherwise, so clearing the cache can never delete queued tasks or logged-out tokens.
+The five Redis URLs must be different. Settings refuse to start otherwise, so clearing the cache can never delete queued tasks, logged-out tokens or WebSocket messages.
 
 ## Creating investors, analysts and admins
 
@@ -465,6 +484,9 @@ The risk split leaves a 45-day gap between parts so 30-day labels never overlap.
 | `analytics.tasks.recompute_single_holding` | Recompute API | Both predictions for one holding |
 | `ml_training.tasks.run_training` | ML Training page | Trains the chosen models |
 | `ml_training.tasks.retrain_models` | Sunday 02:00 UTC | Retrains both models |
+| `monitoring.tasks.poll_live_prices` | Every 2 minutes, Mon–Fri 13:00–21:58 UTC | Live prices for held tickers, sent as `price.update` |
+
+Price downloads also send `price.update`, and every prediction run sends `risk.changed` for labels that moved.
 
 Check that the worker is running:
 
@@ -478,7 +500,8 @@ python manage.py shell -c "from core.tasks import ping; print(ping.delay().get(t
 |---|---|
 | Cached data | Portfolio summaries, risk summaries and dashboards in Redis (`from_cache` shows whether a response came from the cache) |
 | Cache clearing | When portfolios, holdings, prices, predictions or user roles change |
-| Redis databases | 0 broker, 1 results, 2 cache and throttles, 3 token blacklist |
+| Redis databases | 0 broker, 1 results, 2 cache, throttles and live prices, 3 token blacklist, 4 channel layer |
+| WebSocket | JWT access token required; closes with 4401 when it expires or the account changes; events scoped by role; at most 20 followed tickers |
 | Admin pages | Template pages check the role on every request |
 | File uploads | Only `.csv` and `.zip` files are accepted, and file size is limited |
 | Uploaded files | Deleted after import |
@@ -493,8 +516,9 @@ stock_risk_engine/
 ├── dashboards/      dashboard APIs and pages, portfolio and holding pages
 ├── market_data/     price history, dataset uploads, Yahoo Finance, price APIs
 ├── ml_training/     algorithms, features, labels, training, registry, training pages
+├── monitoring/      WebSocket consumer, routing, live events, live price task
 ├── portfolios/      portfolio and holding models, APIs, summary
-├── stock_risk_engine/  settings, urls, celery
+├── stock_risk_engine/  settings, urls, celery, asgi (HTTP + WebSocket)
 ├── templates/       base, accounts, core, dashboards, market_data, ml_training
 ├── script/js/       page scripts and price chart
 ├── ml_models/       trained models (git-ignored)
@@ -505,21 +529,196 @@ stock_risk_engine/
 └── stock_risk_engine.postman_collection.json
 ```
 
+## Live risk monitoring (WebSocket)
+
+The models predict from **daily** prices, so a price change in the middle of the day does not change tomorrow's prediction. The WebSocket does not stream predictions. It delivers changes as they happen:
+
+| What | How often | Event |
+|---|---|---|
+| Price of a followed ticker | Every 2 minutes, Mon–Fri 13:00–21:58 UTC, plus after every daily price download or refresh | `price.update` |
+| A holding's risk label changes | Whenever predictions run (nightly, after training, or a recompute) | `risk.changed` |
+| A requested recompute finishes | When the Celery task ends | `prediction.updated` |
+
+### Connect
+
+```text
+ws://127.0.0.1:8000/ws/live/?token=<access token>
+```
+
+| Target | WebSocket URL |
+|---|---|
+| Android emulator | `ws://10.0.2.2:8000/ws/live/?token=...` |
+| iOS simulator, Flutter web | `ws://127.0.0.1:8000/ws/live/?token=...` |
+| Physical phone | `ws://<computer IP>:8000/ws/live/?token=...` |
+
+The token goes in the URL because browsers cannot add an `Authorization` header to a WebSocket. Daphne logs only the path, never the query string.
+
+If the token is missing, invalid, expired or a refresh token, the server sends an `error` event and closes with code **4401**. The app should refresh the access token and reconnect.
+
+### Messages the app sends
+
+```json
+{"action": "subscribe", "tickers": ["AAPL", "MSFT"]}
+{"action": "unsubscribe", "tickers": ["MSFT"]}
+{"action": "ping"}
+```
+
+- Tickers use the same rules as the REST API and are upper-cased. Up to 20 per connection.
+- Send `ping` every 30 seconds. The server checks the account again and answers `pong`.
+- An invalid message gets an `error` event with field errors; the connection stays open.
+
+### Events the server sends
+
+Every event uses the REST response shape plus `type`:
+
+```json
+{
+    "type": "risk.changed",
+    "status": "success",
+    "message": "AAPL risk is now high.",
+    "data": {
+        "holding_id": 12,
+        "portfolio_id": 4,
+        "portfolio_name": "Growth",
+        "owner": "dion_investor",
+        "ticker": "AAPL",
+        "previous_label": "medium",
+        "risk_label": "high",
+        "risk_score": 0.71,
+        "risk_model_version": "risk-rf-2026.11.07-01",
+        "predicted_direction": "down",
+        "prediction_confidence": 0.54,
+        "forecast_model_version": "forecast-hgb-2026.11.07-01",
+        "last_predicted_at": "2026-11-08T23:00:04.512331Z"
+    },
+    "errors": null
+}
+```
+
+| `type` | When | `data` |
+|---|---|---|
+| `connection.ready` | Right after connecting | `user_id`, `username`, `role`, `token_expires_at`, `max_tickers` |
+| `subscribed` / `unsubscribed` | After a subscribe or unsubscribe | `tickers` now followed |
+| `price.update` | On subscribe (latest known price) and whenever a new price arrives | `ticker`, `price`, `previous_close`, `change`, `change_percent`, `date`, `as_of`, `source` (`live` or `daily`) |
+| `risk.changed` | A holding's risk label changed | Holding fields above, with `previous_label` |
+| `prediction.updated` | A recompute task finished | Holding fields, with the `task_id` returned by the recompute API |
+| `pong` | Reply to `ping` | `server_time`, `token_expires_at` |
+| `error` | Bad message, expired token, or changed account | `errors` explains why |
+
+Prices are strings, like in the REST API.
+
+### Who receives what
+
+| Event | Investor | Analyst | Admin |
+|---|---|---|---|
+| `price.update` | Tickers they follow | Tickers they follow | Tickers they follow |
+| `risk.changed`, `prediction.updated` | Their own holdings | Holdings of their assigned investors | All holdings |
+
+Recipients are worked out when the event is sent, so assigning or removing an analyst takes effect immediately.
+
+### Session rules
+
+| Situation | What happens |
+|---|---|
+| Access token expires | The next message or event closes the socket with 4401 |
+| Password changed, account deactivated or role changed | The next `ping` closes the socket with 4401 |
+| Connection drops | The app reconnects with a growing delay (1, 2, 4 … up to 30 seconds) and subscribes again |
+
+### Live prices
+
+`monitoring.tasks.poll_live_prices` runs every 2 minutes on weekdays during US market hours. It reads the latest price of every ticker held in a portfolio from Yahoo Finance and keeps it in the Redis cache for 24 hours. Live prices are **not** written to `price_history`, so the daily table stays clean and the ML features keep using finished trading days only. Yahoo Finance is unofficial and rate-limited, so this is near-live (minutes), not tick-by-tick.
+
+### Try it in Postman
+
+Postman cannot save WebSocket requests inside a collection file, so:
+
+1. Run the collection up to folder **6. Live risk monitoring**. The request **Prepare live socket URLs** stores `investor_ws_url` and prints it in the Postman console.
+2. Choose **New → WebSocket**, paste the URL and click **Connect**. You receive `connection.ready`.
+3. Send `{"action": "subscribe", "tickers": ["AAPL"]}`. You receive `subscribed` and the latest AAPL price.
+4. Run **Trigger prediction.updated** and **Trigger price.update** and watch the events arrive.
+
+## Testing with Flutter
+
+The Flutter app is a separate project that only uses the `/api/` endpoints with JWT tokens. It never connects to the database.
+
+### Base URL for each test target
+
+| Target | Base URL in Flutter | Backend requirement |
+|---|---|---|
+| Android emulator | `http://10.0.2.2:8000` | `10.0.2.2` in `ALLOWED_HOSTS` |
+| iOS simulator | `http://127.0.0.1:8000` | Already allowed |
+| Physical phone (same Wi-Fi) | `http://<computer IP>:8000` | Computer IP in `ALLOWED_HOSTS`, server on `0.0.0.0` |
+| Flutter web (Chrome) | `http://127.0.0.1:8000` | Flutter web on port 3000 (already in `CORS_ALLOWED_ORIGINS`) |
+
+`ALLOWED_HOSTS` in `settings.py` lists `localhost`, `127.0.0.1`, `10.0.2.2` and the computer's Wi-Fi IP. Any other host gets **400 Bad Request**.
+
+### Physical phone
+
+1. Find the computer's Wi-Fi IP (macOS: `ipconfig getifaddr en0`, Windows: `ipconfig`, Linux: `hostname -I`).
+2. If it is different from the IP in `ALLOWED_HOSTS`, update it there. Home routers can give the computer a new IP after a restart.
+3. Start the server on all network interfaces:
+
+```bash
+python manage.py runserver 0.0.0.0:8000
+```
+
+4. Connect the phone to the same Wi-Fi and use `http://<computer IP>:8000` as the base URL. If it still cannot connect, allow port 8000 in the computer's firewall.
+
+### Flutter web
+
+CORS only applies to Flutter web. Run it on port 3000 so no setting change is needed:
+
+```bash
+flutter run -d chrome --web-port 3000
+```
+
+### Passing the base URL
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
+```
+
+Android blocks plain HTTP by default, so debug builds need `android:usesCleartextTraffic="true"` in `AndroidManifest.xml`.
+
+### API rules the app relies on
+
+| Topic | Rule |
+|---|---|
+| Role | `data.user.role` in the login response and `data.role` in `GET /api/accounts/me/` decide which screens to open |
+| Trailing slash | Every endpoint ends with `/`. Without it, GET is redirected (301) and POST / PATCH / DELETE fail with 500 |
+| Decimals | Prices, quantities and money are strings such as `"150.0000"`; parse with `double.parse` or a decimal package |
+| Dates | Dates are `YYYY-MM-DD`; date-times are ISO 8601 in UTC (ending in `Z`) |
+| Lists | `data.count`, `data.next`, `data.previous`, `data.results`; load more by calling `next` until it is `null` (the link already uses the app's base URL, for example `10.0.2.2`) |
+| 400 | `errors` is `{"field": ["message"]}`; show each message under its form field |
+| 401 | Call `token/refresh/` once and retry; if that fails, clear tokens and open Login |
+| 403 | The role cannot do this; hide the button |
+| 404 | The record does not exist or is not visible to this user |
+| 429 | Wait `errors.retry_after_seconds` before trying again |
+| 202 | A background job was queued; poll `GET /api/analytics/tasks/{task_id}/` (analyst and admin) until `ready` is `true` |
+| Password change | The response contains a new token pair; replace the stored tokens |
+
+Dataset upload and model training stay in the Django web pages. The Flutter admin opens `/datasets/` and `/ml/` in the browser.
+
+The WebSocket URL is the base URL with `http` replaced by `ws` plus `/ws/live/?token=<access>`. Use the `web_socket_channel` package.
+
 ## Postman collection
 
 `stock_risk_engine.postman_collection.json` runs the whole API workflow in order:
 
+0. Flutter readiness: the emulator and phone hosts reach the API, other hosts are rejected, and Flutter web on port 3000 passes CORS
 1. Register users
 2. Admin promotes one user to analyst and assigns them to the investor
 3. The investor builds a portfolio
 4. The analyst checks read-only access, queues tasks and reads the analyst dashboard
 5. Risk, forecast and risk summary are read
-6. The investor changes password, cleans up and logs out
+6. Live risk monitoring: prepares WebSocket URLs and triggers live events
+7. The investor changes password, cleans up and logs out
 
 Each role keeps its own tokens, and expiring access tokens are **refreshed automatically**.
 
 Before running it:
 - set `admin_username` and `admin_password` to your superuser
+- set `phone_host` to your computer's Wi-Fi IP and port (for example `192.168.0.105:8000`)
 - make sure `AAPL` has price data
 
 Run it in Postman or with Newman:
@@ -534,12 +733,15 @@ newman run stock_risk_engine.postman_collection.json --env-var admin_password='y
 
 ## Roadmap
 
-- Docker and docker-compose deployment
-- Production settings
-- OpenAPI / Swagger documentation
-- Flutter client
-- Sector analytics, rebalancing suggestions and LSTM forecasting
+| Phase | Scope | Status |
+|---|---|---|
+| 0–9B | Foundation, accounts, market data, portfolios, ML training, analytics, dashboards, hardening, testing, GUI data and training | Complete |
+| 10 | Flutter readiness: hosts, CORS, Celery import, API contract | Complete |
+| 10B | Live risk monitoring WebSocket API | Next |
+| 11 | Flutter test client, including live prices and risk alerts | Planned |
+| 12 | Docker deployment with Daphne, Celery worker and Beat, PostgreSQL, Redis | Planned |
+| 13 | Push notifications when the app is closed, sector analytics, rebalancing, LSTM comparison | Planned |
 
 ## Disclaimer
 
-Risk labels and direction forecasts are statistical estimates based on historical prices. Next-day direction accuracy around 50–55% is normal and is not a reliable trading signal. **This project is not financial advice.**
+Risk labels and direction forecasts are statistical estimates based on historical prices. Next-day direction accuracy around 50–55% is normal and is not a reliable trading signal. Live price changes do not change a prediction until the next daily run. **This project is not financial advice.**

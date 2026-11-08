@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'daphne',                       # added library to env to handle asynchronous protocols like WebSockets, HTTP/2, and long-polling in Django applications
 
     # Third-party
     'rest_framework',
@@ -37,6 +38,7 @@ INSTALLED_APPS = [
     'analytics',
     'dashboards',
     'ml_training',
+    'monitoring',
 ]
 
 MIDDLEWARE = [
@@ -67,6 +69,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'stock_risk_engine.wsgi.application'
+ASGI_APPLICATION = 'stock_risk_engine.asgi.application'
 DATABASES = {
     "default": {
         "ENGINE":   "django.db.backends.postgresql",
@@ -123,9 +126,17 @@ CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS"))
 
 CELERY_BROKER_URL = env_required("CELERY_BROKER_URL")
 CELERY_RESULT_BACKEND = env_required("CELERY_RESULT_BACKEND")
+CHANNEL_LAYER_REDIS_URL = env_required("CHANNEL_LAYER_REDIS_URL")
 
-if len({CELERY_BROKER_URL, CELERY_RESULT_BACKEND, REDIS_URL, TOKEN_BLACKLIST_REDIS_URL}) != 4:
-    raise ImproperlyConfigured("CELERY_BROKER_URL, CELERY_RESULT_BACKEND, REDIS_URL and TOKEN_BLACKLIST_REDIS_URL must each use a different Redis database.")
+if len({CELERY_BROKER_URL, CELERY_RESULT_BACKEND, REDIS_URL, TOKEN_BLACKLIST_REDIS_URL, CHANNEL_LAYER_REDIS_URL}) != 5:
+    raise ImproperlyConfigured("CELERY_BROKER_URL, CELERY_RESULT_BACKEND, REDIS_URL, TOKEN_BLACKLIST_REDIS_URL and CHANNEL_LAYER_REDIS_URL must each use a different Redis database.")
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [{"address": CHANNEL_LAYER_REDIS_URL, "socket_timeout": 10}]},
+    },
+}
 
 CELERY_TIMEZONE = "UTC"
 CELERY_TASK_TRACK_STARTED = True
@@ -146,6 +157,10 @@ CELERY_BEAT_SCHEDULE = {
     "recompute-holding-forecast": {
         "task": "analytics.tasks.recompute_holding_forecast",
         "schedule": crontab(hour=23, minute=15, day_of_week="mon-fri"),
+    },
+    "poll-live-prices": {
+        "task": "monitoring.tasks.poll_live_prices",
+        "schedule": crontab(minute="*/2", hour="13-21", day_of_week="mon-fri"),
     },
     "retrain-models": {
         "task": "ml_training.tasks.retrain_models",

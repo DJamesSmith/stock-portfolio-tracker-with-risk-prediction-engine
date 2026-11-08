@@ -410,6 +410,11 @@ Goal: a simple, clean Flutter app that exercises every investor and analyst feat
   - media: written by the web app on upload, read by the worker during import.
   - postgres data volume.
 - Health checks for db, redis and web.
+- For Docker provide 3 files:
+  - .dockerignore
+  - docker-compose-yml
+  - Dockerfile
+  - Docker Notes (Instructions for Docker)
 
 7.2 Settings needed when the app is reachable from other machines
 - DEBUG, ALLOWED_HOSTS and CORS origins read from .env instead of fixed values.
