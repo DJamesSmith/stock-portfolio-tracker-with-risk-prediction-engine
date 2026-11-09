@@ -5,9 +5,9 @@ from celery.signals import task_failure
 from core.application_logger import ApplicationLogger
 
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "stock_risk_engine.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "stock_risk_engine_backend.settings")
 
-app = Celery("stock_risk_engine")
+app = Celery("stock_risk_engine_backend")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 

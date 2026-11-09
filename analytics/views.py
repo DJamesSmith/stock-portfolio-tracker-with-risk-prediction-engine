@@ -7,7 +7,7 @@ from core.responses import api_response
 from core.permissions import IsAnalystOrAdminRole
 from portfolios.selectors import find_holding, find_portfolio
 from portfolios.services import get_price_map
-from stock_risk_engine.celery import app as celery_app
+from stock_risk_engine_backend.celery import app as celery_app
 from .serializers import HoldingForecastSerializer, HoldingRiskSerializer, RiskSummarySerializer, TaskStatusSerializer
 from .services.risk_summary import get_risk_summary
 from .tasks import recompute_single_holding

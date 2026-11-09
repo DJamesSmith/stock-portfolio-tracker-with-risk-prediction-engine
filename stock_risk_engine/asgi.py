@@ -1,5 +1,5 @@
 """
-ASGI config for stock_risk_engine project.
+ASGI config for stock_risk_engine_backend project.
 
 It exposes the ASGI callable as a module-level variable named ``application``.
 
@@ -11,7 +11,7 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'stock_risk_engine.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'stock_risk_engine_backend.settings')
 
 django_asgi_app = get_asgi_application()
 

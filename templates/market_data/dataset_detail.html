@@ -16,7 +16,7 @@
 </div>
 
 {% if upload.status == "pending" %}
-    <div class="alert alert-secondary">The files are stored and waiting for a Celery worker. If this does not change, start one with <code>celery -A stock_risk_engine worker -l info</code>.</div>
+    <div class="alert alert-secondary">The files are stored and waiting for a Celery worker. If this does not change, start one with <code>celery -A stock_risk_engine_backend worker -l info</code>.</div>
 {% elif upload.status == "processing" %}
     <div class="alert alert-primary">Importing prices. This page refreshes automatically.</div>
 {% elif upload.status == "completed" %}

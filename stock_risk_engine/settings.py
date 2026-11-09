@@ -52,7 +52,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'stock_risk_engine.urls'
+ROOT_URLCONF = 'stock_risk_engine_backend.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -68,8 +68,8 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'stock_risk_engine.wsgi.application'
-ASGI_APPLICATION = 'stock_risk_engine.asgi.application'
+WSGI_APPLICATION = 'stock_risk_engine_backend.wsgi.application'
+ASGI_APPLICATION = 'stock_risk_engine_backend.asgi.application'
 DATABASES = {
     "default": {
         "ENGINE":   "django.db.backends.postgresql",
@@ -210,7 +210,7 @@ CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
 
 
 # redis-server
-# celery -A stock_risk_engine worker -l info
+# celery -A stock_risk_engine_backend worker -l info
 
 
 # NOTES: https://docs.google.com/document/d/100nUGdp2ZRZcKDNrX7mGhSPQGnLvMLWaZF9840ImHCo/edit?tab=t.0#heading=h.tn77ef5fg1dv

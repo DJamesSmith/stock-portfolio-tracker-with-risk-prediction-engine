@@ -11,7 +11,7 @@ class ApplicationLogger:
     MAX_LOG_BYTES = 5 * 1024 * 1024
     BACKUP_COUNT = 5
 
-    logger = logging.getLogger("stock_risk_engine")
+    logger = logging.getLogger("stock_risk_engine_backend")
 
     if not logger.handlers:
         LOG_DIR.mkdir(exist_ok=True)

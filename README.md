@@ -144,7 +144,7 @@ A record a user is not allowed to see returns **404**. A record they can see but
 
 ```bash
 git clone <your-repo-url>
-cd stock_risk_engine
+cd stock_risk_engine_backend
 python -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -178,8 +178,8 @@ Start each service in its own terminal from the project folder:
 ```bash
 redis-server
 python manage.py runserver
-celery -A stock_risk_engine worker -l info
-celery -A stock_risk_engine beat -l info
+celery -A stock_risk_engine_backend worker -l info
+celery -A stock_risk_engine_backend beat -l info
 ```
 
 `daphne` is the first entry in `INSTALLED_APPS`, so `runserver` starts the ASGI server and serves both HTTP and the WebSocket. The startup line says `Starting ASGI/Daphne ... development server`.
@@ -509,7 +509,7 @@ python manage.py shell -c "from core.tasks import ping; print(ping.delay().get(t
 ## Project structure
 
 ```text
-stock_risk_engine/
+stock_risk_engine_backend/
 ├── accounts/        user model, JWT, auth APIs and pages, role management
 ├── analytics/       prediction services, tasks and APIs
 ├── core/            logger, decorators, responses, permissions, cache, throttles, shared fields
@@ -518,7 +518,7 @@ stock_risk_engine/
 ├── ml_training/     algorithms, features, labels, training, registry, training pages
 ├── monitoring/      WebSocket consumer, routing, live events, live price task
 ├── portfolios/      portfolio and holding models, APIs, summary
-├── stock_risk_engine/  settings, urls, celery, asgi (HTTP + WebSocket)
+├── stock_risk_engine_backend/  settings, urls, celery, asgi (HTTP + WebSocket)
 ├── templates/       base, accounts, core, dashboards, market_data, ml_training
 ├── script/js/       page scripts and price chart
 ├── ml_models/       trained models (git-ignored)
@@ -526,7 +526,7 @@ stock_risk_engine/
 ├── logs/            app.log (git-ignored)
 ├── .env.example
 ├── requirements.txt
-└── stock_risk_engine.postman_collection.json
+└── stock_risk_engine_backend.postman_collection.json
 ```
 
 ## Live risk monitoring (WebSocket)
@@ -703,7 +703,7 @@ The WebSocket URL is the base URL with `http` replaced by `ws` plus `/ws/live/?t
 
 ## Postman collection
 
-`stock_risk_engine.postman_collection.json` runs the whole API workflow in order:
+`stock_risk_engine_backend.postman_collection.json` runs the whole API workflow in order:
 
 0. Flutter readiness: the emulator and phone hosts reach the API, other hosts are rejected, and Flutter web on port 3000 passes CORS
 1. Register users
@@ -724,7 +724,7 @@ Before running it:
 Run it in Postman or with Newman:
 
 ```bash
-newman run stock_risk_engine.postman_collection.json --env-var admin_password='your-admin-password'
+newman run stock_risk_engine_backend.postman_collection.json --env-var admin_password='your-admin-password'
 ```
 
 ## Logging

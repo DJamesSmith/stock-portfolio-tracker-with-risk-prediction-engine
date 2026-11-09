@@ -157,7 +157,7 @@ Phase 13  Future scope ...................................... Planned
 ======================================================================
 
 4.1 Phase 0 — Project foundation
-- Django project stock_risk_engine, PostgreSQL connection, .env loading with python-dotenv.
+- Django project stock_risk_engine_backend, PostgreSQL connection, .env loading with python-dotenv.
 - Single settings.py, local only, DEBUG = True.
 
 4.2 Phase 1 and 1A — Accounts
@@ -226,7 +226,7 @@ Phase 13  Future scope ...................................... Planned
   - The emulator (10.0.2.2) and a phone on the same Wi-Fi now get 401 instead of 400 DisallowedHost.
 - runserver 0.0.0.0:8000 for physical phones.
 - CORS unchanged: Flutter web runs on port 3000, already in CORS_ALLOWED_ORIGINS.
-- stock_risk_engine/__init__.py restored: from .celery import app as celery_app.
+- stock_risk_engine_backend/__init__.py restored: from .celery import app as celery_app.
   - Note: this line has gone missing twice. If your IDE removes "unused imports" automatically, exclude this file.
 - API contract confirmed with no code change: role in login and me/, decimals as strings, ISO dates, pagination keys, 400/401/403/404/429 shapes, 202 + task_id, absolute next links using the app's host.
 - Optional admin status APIs (BE-07) and OpenAPI: not added. The Flutter admin links to /datasets/ and /ml/.
@@ -247,7 +247,7 @@ Goal: one authenticated WebSocket per app that pushes live prices, risk-change a
 
 5.2 Settings
 - INSTALLED_APPS: "daphne" first, "monitoring" added. ("channels" is not required in INSTALLED_APPS.)
-- ASGI_APPLICATION = "stock_risk_engine.asgi.application".
+- ASGI_APPLICATION = "stock_risk_engine_backend.asgi.application".
 - CHANNEL_LAYER_REDIS_URL from .env (Redis database 4), added to the "all Redis URLs must differ" check (now five URLs).
 - CHANNEL_LAYERS uses RedisChannelLayer with socket_timeout 10:
   - Why: redis-py 8 times out reads after 5 seconds by default, and the channel layer waits up to 5 seconds for messages. Without a longer timeout, any connection idle for about 5 seconds crashes with error 1011.
@@ -308,9 +308,9 @@ Goal: one authenticated WebSocket per app that pushes live prices, risk-change a
 5.10 Files (Phase 10B delivery)
 - New: monitoring/__init__.py, apps.py, consumers.py, routing.py, forms.py, services.py, tasks.py.
 - Changed:
-  - stock_risk_engine/settings.py
-  - stock_risk_engine/asgi.py
-  - stock_risk_engine/__init__.py (Celery import restored again)
+  - stock_risk_engine_backend/settings.py
+  - stock_risk_engine_backend/asgi.py
+  - stock_risk_engine_backend/__init__.py (Celery import restored again)
   - core/cache.py (live_quote_key)
   - market_data/services/provider.py (fetch_live_quote)
   - market_data/tasks.py (price.update after new daily rows)
@@ -318,7 +318,7 @@ Goal: one authenticated WebSocket per app that pushes live prices, risk-change a
   - analytics/tasks.py (prediction.updated with the task_id)
   - requirements.txt
   - README.md
-  - stock_risk_engine.postman_collection.json
+  - stock_risk_engine_backend.postman_collection.json
 - .env: add CHANNEL_LAYER_REDIS_URL=redis://localhost:6379/4
 - No migrations.
 
@@ -349,7 +349,7 @@ Goal: one authenticated WebSocket per app that pushes live prices, risk-change a
 Goal: a simple, clean Flutter app that exercises every investor and analyst feature and the admin dashboards, with live prices and risk alerts, designed for phones first.
 
 6.1 Project setup
-- Separate repository, for example stock_risk_engine_flutter.
+- Separate repository, for example stock_risk_engine_backend_flutter.
 - Packages:
   - dio: HTTP requests and interceptors.
   - web_socket_channel: the live connection.
@@ -492,9 +492,9 @@ Goal: a simple, clean Flutter app that exercises every investor and analyst feat
 7.1 Containers
 - Dockerfile for the Django app.
 - docker-compose.yml services:
-  - web: daphne -b 0.0.0.0 -p 8000 stock_risk_engine.asgi:application (serves HTTP and WebSocket)
-  - worker: celery -A stock_risk_engine worker
-  - beat: celery -A stock_risk_engine beat
+  - web: daphne -b 0.0.0.0 -p 8000 stock_risk_engine_backend.asgi:application (serves HTTP and WebSocket)
+  - worker: celery -A stock_risk_engine_backend worker
+  - beat: celery -A stock_risk_engine_backend beat
   - db: PostgreSQL
   - redis: Redis (databases 0 to 4)
 - Gunicorn is no longer needed for the web service, because Daphne serves both protocols.
