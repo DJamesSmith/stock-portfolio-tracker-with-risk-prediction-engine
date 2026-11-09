@@ -11,7 +11,7 @@ urlpatterns = [
     # APIs
     path("api/accounts/", include("accounts.urls.api_urls")),
     path("api/market/", include("market_data.urls.api_urls")),
-    path("api/", include("portfolios.urls")),
-    path("api/analytics/", include("analytics.urls")),
+    path("api/", include("portfolios.api_urls")),
+    path("api/analytics/", include("analytics.api_urls")),
     path("api/dashboard/", include("dashboards.urls.api_urls")),
 ]
