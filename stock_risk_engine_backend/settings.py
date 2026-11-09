@@ -205,9 +205,9 @@ CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
 
 # how to find my Mac's IP ?
 # ipconfig getifaddr en0
-# 192.168.0.105
+# 192.168.0.103
 # This change is to be made in flutter app's baseurl, django's settings.py
-
+# python manage.py runserver 0.0.0.0:8000
 
 # redis-server
 # celery -A stock_risk_engine_backend worker -l info

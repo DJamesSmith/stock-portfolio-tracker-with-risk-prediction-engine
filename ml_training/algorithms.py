@@ -10,8 +10,7 @@ def build_random_forest():
         max_depth=12,
         min_samples_leaf=50,
         n_jobs=-1,
-        random_state=42,
-    )
+        random_state=42)
 
 
 def build_logistic_regression():
@@ -25,5 +24,4 @@ def build_gradient_boosting():
         max_leaf_nodes=31,
         min_samples_leaf=200,
         early_stopping=False,
-        random_state=42,
-    )
+        random_state=42)
