@@ -210,7 +210,7 @@ CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
 # python manage.py runserver 0.0.0.0:8000
 
 # redis-server
-# celery -A stock_risk_engine_backend worker -l info
+# celery -A stock_risk_engine_backend worker -l info --pool=solo
 
 
 # NOTES: https://docs.google.com/document/d/100nUGdp2ZRZcKDNrX7mGhSPQGnLvMLWaZF9840ImHCo/edit?tab=t.0#heading=h.tn77ef5fg1dv
