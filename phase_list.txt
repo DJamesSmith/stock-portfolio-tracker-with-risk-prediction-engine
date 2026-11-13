@@ -1,10 +1,10 @@
 STOCK PORTFOLIO RISK & FORECASTING PLATFORM
-IMPLEMENTATION PLAN — STRUCTURED POINT-WISE NOTES (VERSION 3)
+IMPLEMENTATION PLAN — STRUCTURED POINT-WISE NOTES (VERSION 4)
 
 Document basis:
 - Based on the business requirements PDF version 3.0 (November 2026).
-- Based on the project code reviewed on 8 November 2026.
-- Phases 0 to 10 are complete.
+- Based on the project code reviewed on 13 November 2026.
+- Phases 0 to 10B are complete. Phase 12 (Docker) is delivered.
 - New in version 3: the platform is framed as live risk monitoring. A WebSocket API (Phase 10B) pushes live prices, risk-change alerts and finished recomputes to the Flutter app.
 - The remaining work adds the WebSocket API, builds the Flutter test client on top of REST and WebSocket, then covers deployment and future scope.
 - The Flutter app is a separate project. It only uses the REST API and the WebSocket. It never connects to the database directly.
@@ -147,9 +147,9 @@ Phase 8   Security, performance and hardening ............... Complete
 Phase 9   Testing, Postman and README ....................... Complete
 Phase 9B  GUI dataset upload, GUI training, ml_training app . Complete
 Phase 10  Flutter readiness (backend) ....................... Complete
-Phase 10B Live risk monitoring WebSocket API (backend) ...... Next
+Phase 10B Live risk monitoring WebSocket API (backend) ...... Complete
 Phase 11  Flutter test client (REST + live) ................. Planned
-Phase 12  Deployment (ASGI) ................................. Planned
+Phase 12  Deployment (Docker, ASGI) ......................... Complete
 Phase 13  Future scope ...................................... Planned
 
 ======================================================================
@@ -489,36 +489,71 @@ Goal: a simple, clean Flutter app that exercises every investor and analyst feat
 7. PHASE 12 — DEPLOYMENT (ASGI)
 ======================================================================
 
-7.1 Containers
-- Dockerfile for the Django app.
+7.1 Files
+- Dockerfile:
+  - python:3.14-slim (same Python as the local venv).
+  - PYTHONUNBUFFERED=1 so logs appear in "docker compose logs" at once.
+  - Installs requirements.txt, copies the project, starts Daphne by default.
+  - No build tools needed: every package has a ready-made Linux wheel (checked for Intel and Apple Silicon).
 - docker-compose.yml services:
-  - web: daphne -b 0.0.0.0 -p 8000 stock_risk_engine_backend.asgi:application (serves HTTP and WebSocket)
-  - worker: celery -A stock_risk_engine_backend worker
-  - beat: celery -A stock_risk_engine_backend beat
-  - db: PostgreSQL
-  - redis: Redis (databases 0 to 4)
-- Gunicorn is no longer needed for the web service, because Daphne serves both protocols.
-- Shared volumes:
-  - ml_models: written by the worker during training, read by the web app and worker.
-  - media: written by the web app on upload, read by the worker during import.
-  - postgres data volume.
-- Health checks for db, redis and web.
-- .dockerignore
+  - web: daphne -b 0.0.0.0 -p 8000 stock_risk_engine_backend.asgi:application (from the Dockerfile CMD), port 8000 published.
+  - worker: celery -A stock_risk_engine_backend worker -l info
+  - beat: celery -A stock_risk_engine_backend beat -l info
+  - db: postgres:16, data in the named volume postgres_data, not published to the computer.
+  - redis: redis:7-alpine, databases 0 to 4, not published to the computer.
+  - web, worker and beat share one image (stock_risk_engine_backend).
+  - Health checks: db (pg_isready), redis (redis-cli ping), web (opens /admin/login/).
+  - web and worker wait for healthy db and redis; beat waits for redis.
+- Shared folders (bind mounts, so files stay in the project folder on the computer):
+  - ./media -> /app/media: written by web on upload, read by the worker during import.
+  - ./ml_models -> /app/ml_models: written by the worker during training, read by web and worker. Existing models work at once.
+  - ./logs -> /app/logs: app.log from web, worker and beat.
+- .env.docker (new, no secrets, committed):
+  - Loaded after .env. Only changes DB_HOST to db and the five Redis URLs to redis://redis:6379/0-4.
+  - .env stays unchanged for normal (non-Docker) runs. No more commenting DB_HOST in and out.
+  - Environment variables win over .env, because load_dotenv does not override them.
+- .dockerignore: .git, .env, .env.docker, venv, __pycache__, media, ml_models, logs, staticfiles, backups, .DS_Store, .vscode, Dockerfile, docker-compose.yml.
+  - .env is never copied into the image; Compose passes the values at run time.
 
-7.2 Settings needed when the app is reachable from other machines
-- DEBUG, ALLOWED_HOSTS and CORS origins read from .env instead of fixed values.
-- STATIC_ROOT and collectstatic; static files served by WhiteNoise or a reverse proxy.
-- HTTPS and WSS through a reverse proxy before any real users:
-  - The proxy must pass the Upgrade and Connection headers for /ws/.
-  - Turn off query-string logging for /ws/ in the proxy so tokens are not written to its access log.
-- The Flutter release build uses the deployed https:// and wss:// URLs.
-- Only needed if the project goes beyond local testing; local development keeps DEBUG = True.
+7.2 Code changes
+- requirements.txt:
+  - Added channels-redis==4.3.0. It was missing: the WebSocket worked locally only because it was installed in the venv. In Docker every /ws/live/ connection failed with HTTP 500 (InvalidChannelLayerError).
+  - Added whitenoise==6.12.0. Daphne started directly does not serve static files (runserver did). Without it /static/js/*.js and the Django admin CSS return 404.
+  - Removed gunicorn: Daphne serves HTTP and WebSocket.
+- settings.py: "whitenoise.middleware.WhiteNoiseMiddleware" right after SecurityMiddleware.
+  - With DEBUG = True WhiteNoise serves files straight from script/ and the apps, so no STATIC_ROOT or collectstatic is needed for local Docker.
+- templates/base.html (fix found during review):
+  - The {% if user.is_authenticated %} lines were wrapped in <!-- -->. HTML comments do not stop Django tags, so the if/else still ran and the Login and Register buttons for logged-out visitors ended up inside the comment (invisible).
+  - Restored the if/else and moved </ul> outside the admin-only block (non-admin users got an unclosed list).
+- .gitignore: backups/ (database dumps).
+- README: "Run with Docker" section, roadmap updated.
+- No migrations. No API or URL changes, so the Postman collection is unchanged ({{base_url}} is still http://127.0.0.1:8000).
 
-7.3 Phase 12 acceptance checks
-- docker compose up starts all five services.
-- Upload, training and predictions work end to end in containers.
-- WebSocket events from the worker reach the Flutter app through the proxy.
-- The Flutter app works against the deployed URL.
+7.3 .env rule found during review
+- Docker Compose reads $name inside env files as a variable. SECRET_KEY contains $ and was silently cut from 66 to 55 characters.
+- Fix: wrap any value containing $ in single quotes, e.g. SECRET_KEY='django-insecure-...'. python-dotenv reads the quoted value the same way.
+
+7.4 Moving the local data into Docker
+- Option A (keep everything): pg_dump the local database into backups/db_backup.sql, then load it into the db container with psql. Tested, including loading twice.
+  - The db image major version should match "pg_dump --version" on the computer.
+- Option B (start fresh): migrate, createsuperuser, upload the dataset on /datasets/, train on /ml/.
+- ml_models/ and media/ need no copying because they are shared folders.
+
+7.5 Only if the project goes beyond local testing (not done)
+- DEBUG, ALLOWED_HOSTS and CORS origins read from .env.
+- DEBUG = False then needs STATIC_ROOT = BASE_DIR / "staticfiles" and collectstatic (WhiteNoise is already in place).
+- HTTPS and WSS through a reverse proxy; pass Upgrade/Connection headers for /ws/; no query-string logging for /ws/.
+- Flutter release build with https:// and wss:// URLs.
+- Non-root user in the Dockerfile (the worker currently prints Celery's "superuser privileges" warning; harmless locally).
+
+7.6 Phase 12 acceptance checks
+- docker compose up -d --build starts all five services; docker compose ps shows db, redis and web as healthy.
+- http://127.0.0.1:8000 loads with styles and scripts; /admin/ has its CSS.
+- Login, portfolio and holding APIs work from Postman with the same collection.
+- ws://127.0.0.1:8000/ws/live/?token=... returns connection.ready; a refresh or recompute from Postman sends events from the worker to the socket.
+- Upload on /datasets/ and training on /ml/ complete; new model files appear in the project's ml_models/ folder.
+- The Flutter emulator (10.0.2.2:8000) and a phone (<computer IP>:8000) connect as before.
+- Verified in the sandbox without Docker Hub: same env setup, Daphne + WhiteNoise static, WebSocket connection.ready / subscribe / cross-process price.update / ping after 12 s idle, Celery ping, Beat start, compose config resolves every override.
 
 ======================================================================
 8. PHASE 13 — FUTURE SCOPE
@@ -571,15 +606,15 @@ Goal: a simple, clean Flutter app that exercises every investor and analyst feat
 - Should the Flutter admin show dataset upload and training status (read-only admin APIs), or only link to the web pages? (Phase 10 kept the links.)
 - Is OpenAPI / Swagger documentation wanted?
 - State management in Flutter: provider is suggested for simplicity; riverpod or bloc are alternatives.
-- Will the project be deployed beyond local testing (Phase 12), or stay local?
+- Will the project be deployed beyond local testing (see 7.5), or stay local in Docker?
 - Should Firebase push notifications be added for when the app is closed (Phase 13)?
 
 ======================================================================
 12. IMMEDIATE NEXT STEPS
 ======================================================================
 
-1. Phase 10B: install channels, channels-redis and daphne; add CHANNEL_LAYER_REDIS_URL to .env; apply the Phase 10B files.
-2. Run the server and confirm the startup line says "Starting ASGI/Daphne".
-3. Connect with Postman (New > WebSocket) and check connection.ready, subscribe and the trigger requests.
-4. Phase 11A: create the Flutter project, API client, login and role routing.
-5. Continue Phase 11B to 11F, then Phase 12 if deploying.
+1. Apply the Phase 12 files; quote SECRET_KEY in .env.
+2. Stop the local runserver, worker and beat (port 8000 must be free).
+3. docker compose up -d --build, then migrate (or load the local database dump).
+4. Run the Postman collection and the WebSocket check against the containers.
+5. Continue Phase 11 (Flutter) against the Docker backend; Phase 13 when ready.
