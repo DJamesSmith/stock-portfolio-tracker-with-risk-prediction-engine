@@ -83,6 +83,7 @@ Admins upload the price dataset and train the models from the browser. A JSON AP
 | Authentication | Custom `User` model, JWT with PyJWT |
 | Background jobs | Celery 5.6 + Celery Beat, Redis broker |
 | Real-time | Django Channels 4.3, channels-redis, Daphne (ASGI server) |
+| Containers | Docker, Docker Compose, WhiteNoise for static files |
 | Cache, throttling, token blacklist, channel layer | Redis |
 | Machine learning | pandas, NumPy, scikit-learn, joblib |
 | Market data | Kaggle CSV dataset, yfinance |
@@ -139,6 +140,7 @@ A record a user is not allowed to see returns **404**. A record they can see but
 - Python 3.12+
 - PostgreSQL
 - Redis
+- Or only Docker Desktop (see [Run with Docker](#run-with-docker))
 
 ### Install
 
@@ -187,6 +189,52 @@ celery -A stock_risk_engine_backend beat -l info
 On Windows, start the worker with `--pool=solo`.
 
 Open http://127.0.0.1:8000 and log in as the admin.
+
+### Run with Docker
+
+Docker runs the whole platform (web, worker, beat, PostgreSQL and Redis) with one command. Install Docker Desktop and start it first.
+
+| Service | What it runs |
+|---|---|
+| `web` | Daphne on port 8000 (HTTP and WebSocket). WhiteNoise serves the static files |
+| `worker` | Celery worker (uploads, training, predictions, price downloads) |
+| `beat` | Celery Beat schedule |
+| `db` | PostgreSQL 16, data kept in the `postgres_data` volume |
+| `redis` | Redis, databases 0 to 4 |
+
+`.env` holds your settings and secrets. `.env.docker` is loaded after it and only changes the addresses: inside Docker the database is `db` and Redis is `redis`, not `localhost`. Keep `.env` as it is for normal runs.
+
+If a value in `.env` contains `$`, wrap it in single quotes (`SECRET_KEY='...'`). Docker Compose treats `$name` as a variable and would cut it out.
+
+`media/`, `ml_models/` and `logs/` are shared folders between your computer and the containers, so trained models, uploads and `app.log` stay in the project folder.
+
+```bash
+docker compose up -d --build
+docker compose exec web python manage.py migrate
+docker compose exec web python manage.py createsuperuser
+docker compose ps
+```
+
+Open http://127.0.0.1:8000. The Flutter emulator, a phone and Postman use the same URLs as before.
+
+| Task | Command |
+|---|---|
+| Follow logs | `docker compose logs -f web worker` |
+| Stop | `docker compose stop` |
+| Start again | `docker compose start` |
+| After changing code or `requirements.txt` | `docker compose up -d --build` |
+| Remove containers (data kept) | `docker compose down` |
+| Remove containers and the database | `docker compose down -v` |
+
+Copy your local database into the container (run in the project folder on your computer):
+
+```bash
+mkdir -p backups
+pg_dump -h localhost -U django_user -d stock_risk_prediction_db --no-owner --no-privileges --clean --if-exists -f backups/db_backup.sql
+docker compose exec -T db psql -U django_user -d stock_risk_prediction_db < backups/db_backup.sql
+```
+
+Use the same PostgreSQL major version in `docker-compose.yml` as `pg_dump --version` shows.
 
 ### Environment variables
 
@@ -525,6 +573,9 @@ stock_risk_engine_backend/
 ├── media/           uploads while they are imported (git-ignored)
 ├── logs/            app.log (git-ignored)
 ├── .env.example
+├── .env.docker      container addresses for Docker
+├── Dockerfile
+├── docker-compose.yml
 ├── requirements.txt
 └── stock_risk_engine_backend.postman_collection.json
 ```
@@ -737,9 +788,9 @@ newman run stock_risk_engine_backend.postman_collection.json --env-var admin_pas
 |---|---|---|
 | 0–9B | Foundation, accounts, market data, portfolios, ML training, analytics, dashboards, hardening, testing, GUI data and training | Complete |
 | 10 | Flutter readiness: hosts, CORS, Celery import, API contract | Complete |
-| 10B | Live risk monitoring WebSocket API | Next |
+| 10B | Live risk monitoring WebSocket API | Complete |
 | 11 | Flutter test client, including live prices and risk alerts | Planned |
-| 12 | Docker deployment with Daphne, Celery worker and Beat, PostgreSQL, Redis | Planned |
+| 12 | Docker deployment with Daphne, Celery worker and Beat, PostgreSQL, Redis | Complete |
 | 13 | Push notifications when the app is closed, sector analytics, rebalancing, LSTM comparison | Planned |
 
 ## Disclaimer
